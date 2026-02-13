@@ -10,7 +10,12 @@ import json
 class QuantumJobInput(BaseModel):
     """Input schema for quantum job status and results"""
     job_id: str = Field(
-        description="ID del trabajo cuántico (ej: 'd671cklbujdc73cvbp30'). Si está vacío, muestra todos los trabajos recientes."
+        default="",
+        description="ID del trabajo cuántico (ej: 'd671cklbujdc73cvbp30'). Si está vacío o es 'list', muestra todos los trabajos recientes del usuario."
+    )
+    filter_status: str = Field(
+        default="all",
+        description="Filtrar trabajos por estado: 'all' (todos), 'running' (en ejecución), 'queued' (en cola), 'done' (completados), 'error' (con error)"
     )
 
 class IBMQuantumJobTool(Tool[QuantumJobInput]):
@@ -22,7 +27,39 @@ class IBMQuantumJobTool(Tool[QuantumJobInput]):
     
     @property
     def description(self) -> str:
-        return "Consulta el estado y resultados de trabajos cuánticos ejecutados en IBM Quantum usando el Job ID."
+        return """
+Consulta el estado y resultados de TUS trabajos cuánticos en IBM Quantum.
+
+USAR ESTA HERRAMIENTA CUANDO:
+✅ Usuario pregunta "¿cuáles son mis trabajos?"
+✅ Usuario pregunta "muéstrame mis trabajos en ejecución"
+✅ Usuario pregunta "lista mis trabajos cuánticos"
+✅ Usuario pregunta "¿qué trabajos tengo en cola?"
+✅ Usuario pregunta "muéstrame mis trabajos completados"
+✅ Usuario proporciona un Job ID específico
+
+NO USAR PARA:
+❌ Consultar backends disponibles (usa ibm_quantum_status)
+❌ Ver estado de computadoras cuánticas (usa ibm_quantum_status)
+❌ Información de backends (usa ibm_quantum_info)
+
+PARÁMETROS:
+- job_id: Vacío o "list" para listar todos, o Job ID específico
+- filter_status: "all", "running", "queued", "done", "error"
+
+EJEMPLOS:
+1. Listar todos los trabajos:
+   {"job_id": "", "filter_status": "all"}
+
+2. Solo trabajos en ejecución:
+   {"job_id": "", "filter_status": "running"}
+
+3. Solo trabajos en cola:
+   {"job_id": "", "filter_status": "queued"}
+
+4. Trabajo específico:
+   {"job_id": "d673qqdbujdc73cvep1g", "filter_status": "all"}
+"""
     
     @property
     def input_schema(self) -> type[QuantumJobInput]:
@@ -40,12 +77,12 @@ class IBMQuantumJobTool(Tool[QuantumJobInput]):
     ) -> StringToolOutput:
         """Check quantum job status and retrieve results."""
         try:
-            # Inicializa el servicio
+            # Inicializa el servicio - usa la instancia guardada
             service = QiskitRuntimeService(channel="ibm_quantum_platform")
             
-            if not input.job_id:
-                # Mostrar trabajos recientes
-                return await self._list_recent_jobs(service)
+            if not input.job_id or input.job_id.lower() == "list":
+                # Mostrar trabajos recientes con filtro
+                return await self._list_recent_jobs(service, input.filter_status)
             
             # Obtener trabajo específico
             try:
@@ -102,13 +139,39 @@ class IBMQuantumJobTool(Tool[QuantumJobInput]):
                     result = job.result()
                     results_found = False
                     
-                    # Método 1: SamplerV2 - result.data contiene PubResult
-                    if hasattr(result, 'data') and result.data:
+                    # Método 1: SamplerV2 con BitArray - result._pub_results
+                    if hasattr(result, '_pub_results') and result._pub_results:
+                        try:
+                            pub_result = result._pub_results[0]
+                            
+                            # Acceder a data.c que contiene el BitArray
+                            if hasattr(pub_result, 'data') and hasattr(pub_result.data, 'c'):
+                                bit_array = pub_result.data.c
+                                
+                                # Obtener conteos del BitArray
+                                if hasattr(bit_array, 'get_counts'):
+                                    counts = bit_array.get_counts()
+                                    
+                                    result_text += "### 📊 Resultados de Mediciones\n\n"
+                                    result_text += "| Estado Cuántico | Conteo | Porcentaje |\n"
+                                    result_text += "|-----------------|--------|------------|\n"
+                                    
+                                    total = sum(counts.values())
+                                    for state, count in sorted(counts.items(), key=lambda x: x[1], reverse=True)[:15]:
+                                        percentage = (count / total) * 100
+                                        result_text += f"| `{state}` | {count:,} | {percentage:.2f}% |\n"
+                                    
+                                    result_text += f"\n**Total de mediciones:** {total:,}\n\n"
+                                    results_found = True
+                        except Exception as e:
+                            result_text += f"⚠️ Error al procesar BitArray: {str(e)}\n\n"
+                    
+                    # Método 2: Formato antiguo - result.data
+                    if not results_found and hasattr(result, 'data') and result.data:
                         try:
                             pub_result = result.data[0]
                             
                             # Buscar atributos de mediciones en PubResult
-                            # SamplerV2 puede tener diferentes atributos según la versión
                             measurements = None
                             
                             # Intentar diferentes atributos comunes
@@ -129,25 +192,7 @@ class IBMQuantumJobTool(Tool[QuantumJobInput]):
                                 elif isinstance(measurements, dict):
                                     counts = measurements
                                 else:
-                                    # Intentar convertir a diccionario de conteos
                                     counts = {}
-                                    try:
-                                        # Si es un array de bits, contar ocurrencias
-                                        import numpy as np
-                                        if hasattr(measurements, 'array'):
-                                            meas_array = measurements.array
-                                        else:
-                                            meas_array = np.array(measurements)
-                                        
-                                        # Convertir cada medición a string binario
-                                        for meas in meas_array:
-                                            if isinstance(meas, (list, np.ndarray)):
-                                                bit_string = ''.join(str(int(b)) for b in meas)
-                                            else:
-                                                bit_string = str(meas)
-                                            counts[bit_string] = counts.get(bit_string, 0) + 1
-                                    except Exception:
-                                        pass
                                 
                                 if counts:
                                     total = sum(counts.values())
@@ -158,9 +203,9 @@ class IBMQuantumJobTool(Tool[QuantumJobInput]):
                                     result_text += f"\n**Total de mediciones:** {total:,}\n\n"
                                     results_found = True
                         except Exception as e:
-                            result_text += f"⚠️ Error al procesar resultados de SamplerV2: {str(e)}\n\n"
+                            result_text += f"⚠️ Error al procesar resultados: {str(e)}\n\n"
                     
-                    # Método 2: quasi_dists (formato antiguo)
+                    # Método 3: quasi_dists (formato muy antiguo)
                     if not results_found and hasattr(result, 'quasi_dists') and result.quasi_dists:
                         result_text += "### 📊 Distribución de Probabilidades\n\n"
                         result_text += "| Estado Cuántico | Probabilidad | Conteo (aprox) |\n"
@@ -253,11 +298,11 @@ class IBMQuantumJobTool(Tool[QuantumJobInput]):
             error_text += "- Tengas acceso al trabajo solicitado\n"
             return StringToolOutput(result=error_text)
     
-    async def _list_recent_jobs(self, service: QiskitRuntimeService) -> StringToolOutput:
-        """List recent jobs for the user."""
+    async def _list_recent_jobs(self, service: QiskitRuntimeService, filter_status: str = "all") -> StringToolOutput:
+        """List recent jobs for the user with optional status filter."""
         try:
-            # Obtener los últimos 10 trabajos
-            jobs = service.jobs(limit=10)
+            # Obtener los últimos 20 trabajos para tener suficientes después del filtro
+            jobs = service.jobs(limit=20)
             
             if not jobs:
                 return StringToolOutput(
@@ -265,7 +310,46 @@ class IBMQuantumJobTool(Tool[QuantumJobInput]):
                            "Ejecuta un circuito cuántico para crear tu primer trabajo."
                 )
             
-            result_text = "# 📋 Tus Trabajos Recientes en IBM Quantum\n\n"
+            # Filtrar trabajos según el estado solicitado
+            filtered_jobs = []
+            status_map = {
+                'running': ['RUNNING'],
+                'queued': ['QUEUED'],
+                'done': ['DONE', 'COMPLETED'],
+                'error': ['ERROR', 'CANCELLED']
+            }
+            
+            for job in jobs:
+                status = str(job.status())
+                if filter_status == "all":
+                    filtered_jobs.append(job)
+                elif filter_status.lower() in status_map:
+                    if status in status_map[filter_status.lower()]:
+                        filtered_jobs.append(job)
+            
+            if not filtered_jobs:
+                filter_msg = f" con estado '{filter_status}'" if filter_status != "all" else ""
+                return StringToolOutput(
+                    result=f"📭 No tienes trabajos{filter_msg} en IBM Quantum.\n\n"
+                           "Ejecuta un circuito cuántico para crear tu primer trabajo."
+                )
+            
+            # Título según el filtro
+            if filter_status == "all":
+                title = "# 📋 Todos Tus Trabajos Cuánticos\n\n"
+            elif filter_status == "running":
+                title = "# 🔄 Tus Trabajos en Ejecución\n\n"
+            elif filter_status == "queued":
+                title = "# ⏳ Tus Trabajos en Cola\n\n"
+            elif filter_status == "done":
+                title = "# ✅ Tus Trabajos Completados\n\n"
+            elif filter_status == "error":
+                title = "# 🔴 Tus Trabajos con Error\n\n"
+            else:
+                title = "# 📋 Tus Trabajos Cuánticos\n\n"
+            
+            result_text = title
+            result_text += f"**Total encontrados:** {len(filtered_jobs)}\n\n"
             result_text += "| Job ID | Backend | Estado | Creado |\n"
             result_text += "|--------|---------|--------|--------|\n"
             
@@ -273,11 +357,12 @@ class IBMQuantumJobTool(Tool[QuantumJobInput]):
                 'QUEUED': '⏳',
                 'RUNNING': '🔄',
                 'COMPLETED': '✅',
+                'DONE': '✅',
                 'CANCELLED': '❌',
                 'ERROR': '🔴'
             }
             
-            for job in jobs:
+            for job in filtered_jobs[:10]:  # Mostrar máximo 10
                 job_id = job.job_id()[:20] + "..."  # Truncar para la tabla
                 backend = job.backend().name if hasattr(job, 'backend') else "N/A"
                 status = job.status()
@@ -287,8 +372,17 @@ class IBMQuantumJobTool(Tool[QuantumJobInput]):
                 
                 result_text += f"| `{job_id}` | {backend} | {emoji} {status_name} | {created} |\n"
             
+            if len(filtered_jobs) > 10:
+                result_text += f"\n*Mostrando 10 de {len(filtered_jobs)} trabajos*\n"
+            
             result_text += "\n"
             result_text += "💡 **Para ver detalles de un trabajo específico**, proporciona el Job ID completo.\n"
+            
+            # Agregar sugerencias según el filtro
+            if filter_status == "running" or filter_status == "queued":
+                result_text += "⏱️ **Tip:** Estos trabajos aún están procesándose. Consulta más tarde para ver los resultados.\n"
+            elif filter_status == "done":
+                result_text += "✅ **Tip:** Usa el Job ID para ver los resultados detallados de cada trabajo.\n"
             
             return StringToolOutput(result=result_text)
             

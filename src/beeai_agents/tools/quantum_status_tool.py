@@ -5,12 +5,13 @@ from beeai_framework.context import RunContext
 from pydantic import BaseModel, Field
 from qiskit_ibm_runtime import QiskitRuntimeService
 from typing import Optional
+import traceback
 
 class QuantumStatusInput(BaseModel):
     """Input schema for quantum status tool - no parameters needed"""
-    include_simulators: bool = Field(
+    only_hardware: bool = Field(
         default=False, 
-        description="Si es True, incluye simuladores en la lista. False solo muestra hardware real."
+        description="Si es True, SOLO muestra hardware real (excluye simuladores). Por defecto muestra TODO (hardware + simuladores)."
     )
 
 class IBMQuantumStatusTool(Tool[QuantumStatusInput]):
@@ -40,16 +41,26 @@ class IBMQuantumStatusTool(Tool[QuantumStatusInput]):
     ) -> StringToolOutput:
         """Check available quantum computers and their queue status."""
         try:
-            # Inicializa el servicio con el channel correcto
+            # Inicializa el servicio - sin especificar instancia, usa la guardada
+            print("[IBMQuantumStatusTool] Inicializando servicio de IBM Quantum...")
             service = QiskitRuntimeService(channel="ibm_quantum_platform")
             
             # Obtener todos los backends disponibles
-            backends = service.backends(
-                simulator=input.include_simulators,
-                operational=True
-            )
+            # Si only_hardware=False (default), busca TODOS (hardware + simuladores)
+            # Si only_hardware=True, solo busca hardware real
+            print(f"[IBMQuantumStatusTool] Buscando backends (only_hardware={input.only_hardware})...")
+            
+            if input.only_hardware:
+                # Solo hardware real, sin simuladores
+                backends = service.backends(simulator=False)
+            else:
+                # TODOS los backends disponibles (hardware + simuladores)
+                backends = service.backends()
+            
+            print(f"[IBMQuantumStatusTool] Backends encontrados: {len(backends)}")
             
             if not backends:
+                print("[IBMQuantumStatusTool] ⚠️ No se encontraron backends")
                 return StringToolOutput(
                     result="⚠️ No se encontraron computadoras cuánticas disponibles en este momento."
                 )
@@ -95,6 +106,8 @@ class IBMQuantumStatusTool(Tool[QuantumStatusInput]):
             return StringToolOutput(result=result_text)
             
         except Exception as e:
+            print(f"[IBMQuantumStatusTool] ❌ Error: {str(e)}")
+            print(f"[IBMQuantumStatusTool] Traceback:\n{traceback.format_exc()}")
             error_text = f"❌ Error al consultar el estado de las computadoras cuánticas: {str(e)}\n\n"
             error_text += "Verifica que tu token de IBM Quantum sea válido y tenga los permisos necesarios."
             return StringToolOutput(result=error_text)

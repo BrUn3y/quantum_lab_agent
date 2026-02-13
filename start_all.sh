@@ -1,62 +1,114 @@
 #!/bin/bash
 
-# Script para iniciar ambos agentes en terminales separadas
-# Requiere: tmux o screen (opcional)
-
-echo "=================================="
-echo "🚀 Quantum Lab Agent System"
-echo "=================================="
+echo "=========================================="
+echo "🚀 Starting Quantum Lab Agent System"
+echo "=========================================="
 echo ""
-echo "Iniciando sistema completo de agentes A2A..."
+echo "📋 System Architecture:"
+echo "  🔹 Developer Agent (Port 8001) - Code Generation"
+echo "  🔹 Status Agent (Port 8002) - Status Queries"
+echo "  🔹 Computing Agent (Port 8003) - Circuit Execution"
+echo "  🔹 Operations Agent (Port 8000) - Orchestrator"
+echo ""
+echo "=========================================="
 echo ""
 
-# Verificar si tmux está instalado
-if command -v tmux &> /dev/null; then
-    echo "✅ Usando tmux para gestionar las sesiones"
-    echo ""
-    
-    # Crear sesión de tmux
-    tmux new-session -d -s quantum_agents
-    
-    # Ventana 1: Developer Agent
-    tmux rename-window -t quantum_agents:0 'Developer'
-    tmux send-keys -t quantum_agents:0 'bash start_developer.sh' C-m
-    
-    # Ventana 2: Operations Agent
-    tmux new-window -t quantum_agents:1 -n 'Operations'
-    tmux send-keys -t quantum_agents:1 'sleep 5 && bash start_operations.sh' C-m
-    
-    # Adjuntar a la sesión
-    echo "=================================="
-    echo "✅ Agentes iniciados en tmux"
-    echo ""
-    echo "Para ver los agentes:"
-    echo "  tmux attach -t quantum_agents"
-    echo ""
-    echo "Para navegar entre ventanas:"
-    echo "  Ctrl+B, luego 0 (Developer) o 1 (Operations)"
-    echo ""
-    echo "Para detener todo:"
-    echo "  tmux kill-session -t quantum_agents"
-    echo "=================================="
-    
-    tmux attach -t quantum_agents
-    
-else
-    echo "⚠️  tmux no está instalado"
-    echo ""
-    echo "Por favor, inicia los agentes manualmente en terminales separadas:"
-    echo ""
-    echo "Terminal 1:"
-    echo "  bash start_developer.sh"
-    echo ""
-    echo "Terminal 2:"
-    echo "  bash start_operations.sh"
-    echo ""
-    echo "O instala tmux:"
-    echo "  macOS: brew install tmux"
-    echo "  Linux: sudo apt-get install tmux"
-    echo "=================================="
-fi
+# Function to check if a port is in use
+check_port() {
+    if lsof -Pi :$1 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
+        echo "⚠️  Warning: Port $1 is already in use"
+        return 1
+    fi
+    return 0
+}
+
+# Check ports before starting
+echo "🔍 Checking ports..."
+check_port 8001
+check_port 8002
+check_port 8003
+check_port 8000
+echo ""
+
+# Start Developer Agent (port 8001)
+echo "🚀 Starting Developer Agent on port 8001..."
+python -m beeai_agents.quantum_developer_agent &
+DEVELOPER_PID=$!
+echo "   ✅ Developer Agent started (PID: $DEVELOPER_PID)"
+echo ""
+
+# Wait for Developer to start
+sleep 3
+
+# Start Status Agent (port 8002)
+echo "🚀 Starting Status Agent on port 8002..."
+python -m beeai_agents.quantum_status_agent &
+STATUS_PID=$!
+echo "   ✅ Status Agent started (PID: $STATUS_PID)"
+echo ""
+
+# Wait for Status to start
+sleep 3
+
+# Start Computing Agent (port 8003)
+echo "🚀 Starting Computing Agent on port 8003..."
+python -m beeai_agents.quantum_computing_agent &
+COMPUTING_PID=$!
+echo "   ✅ Computing Agent started (PID: $COMPUTING_PID)"
+echo ""
+
+# Wait for Computing to start
+sleep 3
+
+# Start Operations Agent (port 8000)
+echo "🚀 Starting Operations Agent on port 8000..."
+python -m beeai_agents.quantum_operations_agent &
+OPERATIONS_PID=$!
+echo "   ✅ Operations Agent started (PID: $OPERATIONS_PID)"
+echo ""
+
+echo "=========================================="
+echo "✅ All agents started successfully!"
+echo "=========================================="
+echo ""
+echo "📊 Agent Details:"
+echo "  🔹 Developer Agent:"
+echo "     - PID: $DEVELOPER_PID"
+echo "     - URL: http://127.0.0.1:8001"
+echo "     - Model: Mistral Large"
+echo "     - Role: Code Generation & Explanations"
+echo ""
+echo "  🔹 Status Agent:"
+echo "     - PID: $STATUS_PID"
+echo "     - URL: http://127.0.0.1:8002"
+echo "     - Model: Mistral Small"
+echo "     - Role: Backend & Job Status Queries"
+echo ""
+echo "  🔹 Computing Agent:"
+echo "     - PID: $COMPUTING_PID"
+echo "     - URL: http://127.0.0.1:8003"
+echo "     - Model: Mistral Small"
+echo "     - Role: Circuit Execution"
+echo ""
+echo "  🔹 Operations Agent:"
+echo "     - PID: $OPERATIONS_PID"
+echo "     - URL: http://127.0.0.1:8000"
+echo "     - Model: Mistral Small"
+echo "     - Role: Main Orchestrator"
+echo ""
+echo "=========================================="
+echo ""
+echo "💡 Tips:"
+echo "  - Use Operations Agent (port 8000) as main entry point"
+echo "  - Developer, Status, and Computing agents are invoked automatically via A2A"
+echo "  - Press Ctrl+C to stop all agents"
+echo ""
+echo "🛑 To stop all agents, run:"
+echo "   kill $DEVELOPER_PID $STATUS_PID $COMPUTING_PID $OPERATIONS_PID"
+echo ""
+echo "=========================================="
+
+# Wait for all background processes
+wait
 
 # Made with Bob

@@ -13,6 +13,8 @@ HERRAMIENTAS DE CONSULTA:
 
 HERRAMIENTAS DE COMUNICACIÓN A2A:
 - QuantumDeveloperClient: Cliente para invocar al Developer Agent
+- QuantumStatusClient: Cliente para invocar al Status Agent
+- QuantumComputingClient: Cliente para invocar al Computing Agent
 """
 
 from .quantum_tool import IBMQuantumTool
@@ -20,6 +22,8 @@ from .quantum_status_tool import IBMQuantumStatusTool
 from .quantum_info_tool import IBMQuantumInfoTool
 from .quantum_job_tool import IBMQuantumJobTool
 from .quantum_developer_client import QuantumDeveloperClient
+from .quantum_status_client import QuantumStatusClient
+from .quantum_computing_client import QuantumComputingClient
 
 __all__ = [
     "IBMQuantumTool",
@@ -27,6 +31,8 @@ __all__ = [
     "IBMQuantumInfoTool",
     "IBMQuantumJobTool",
     "QuantumDeveloperClient",
+    "QuantumStatusClient",
+    "QuantumComputingClient",
 ]
 
 # Made with Bob

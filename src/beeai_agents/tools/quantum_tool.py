@@ -6,11 +6,15 @@ from pydantic import BaseModel, Field
 from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2
 from qiskit import QuantumCircuit, transpile
 from typing import Optional
+import asyncio
+import time
 
 class QuantumInput(BaseModel):
     qasm_code: str = Field(description="El código en formato OpenQASM 3.0 del circuito. Debe ser código QASM válido con include, qreg, creg y measure.")
     use_real_device: bool = Field(default=False, description="Si es True, usa hardware cuántico real (QPU). Si es False, usa simulador.")
     backend_name: str = Field(default="", description="Nombre específico del backend a usar (opcional). Si está vacío, se selecciona automáticamente.")
+    wait_for_results: bool = Field(default=False, description="Si es True, espera a que el trabajo termine y muestra los resultados. Si es False, solo retorna el Job ID inmediatamente.")
+    max_wait_time: int = Field(default=300, description="Tiempo máximo de espera en segundos (default: 300 = 5 minutos).")
 
 class IBMQuantumTool(Tool[QuantumInput]):
     """Tool for executing quantum circuits on IBM Quantum infrastructure."""
@@ -39,7 +43,7 @@ class IBMQuantumTool(Tool[QuantumInput]):
     ) -> StringToolOutput:
         """Execute quantum circuit on IBM Quantum infrastructure."""
         try:
-            # Inicializa el servicio
+            # Inicializa el servicio - usa la instancia guardada
             service = QiskitRuntimeService(channel="ibm_quantum_platform")
             
             # Selección de backend
@@ -99,20 +103,103 @@ class IBMQuantumTool(Tool[QuantumInput]):
             sampler = SamplerV2(mode=backend)
             job = sampler.run([transpiled_qc])
             
-            # Construir respuesta detallada
+            # Construir respuesta inicial
             result_text += f"✅ **Circuito enviado exitosamente**\n\n"
             result_text += f"**Backend:** {backend.name}\n"
             result_text += f"**Tipo:** {backend_type}\n"
-            result_text += f"**Job ID:** {job.job_id()}\n"
+            result_text += f"**Job ID:** `{job.job_id()}`\n"
             result_text += f"**Qubits físicos usados:** {transpiled_qc.num_qubits}\n"
             result_text += f"**Puertas transpiladas:** {len(transpiled_qc.data)}\n\n"
             
-            if input.use_real_device:
-                result_text += "🎯 **CONFIRMACIÓN:** Este circuito se está ejecutando en HARDWARE CUÁNTICO REAL.\n"
-                result_text += f"Los resultados estarán disponibles cuando el trabajo termine de ejecutarse en {backend.name}.\n"
+            # Si wait_for_results es True, esperar a que termine
+            if input.wait_for_results:
+                result_text += "⏳ **Esperando resultados...**\n\n"
+                
+                start_time = time.time()
+                final_states = ['DONE', 'COMPLETED', 'CANCELLED', 'ERROR']
+                
+                while True:
+                    status = job.status()
+                    elapsed = time.time() - start_time
+                    
+                    # Verificar timeout
+                    if elapsed > input.max_wait_time:
+                        result_text += f"⏱️ **Timeout:** El trabajo no terminó en {input.max_wait_time} segundos.\n"
+                        result_text += f"**Estado actual:** {status}\n"
+                        result_text += f"**Job ID:** `{job.job_id()}`\n\n"
+                        result_text += "💡 Usa `ibm_quantum_job` con este Job ID para consultar los resultados más tarde.\n"
+                        return StringToolOutput(result=result_text)
+                    
+                    # Verificar si terminó
+                    if status in final_states:
+                        break
+                    
+                    # Mostrar progreso
+                    if status == 'QUEUED':
+                        result_text += f"   📊 Estado: En cola (esperando {int(elapsed)}s)\n"
+                    elif status == 'RUNNING':
+                        result_text += f"   🔄 Estado: Ejecutando (esperando {int(elapsed)}s)\n"
+                    
+                    # Esperar 5 segundos antes de volver a consultar
+                    await asyncio.sleep(5)
+                
+                # Trabajo terminado
+                result_text += f"\n✅ **Trabajo completado en {int(elapsed)} segundos**\n"
+                result_text += f"**Estado final:** {status}\n\n"
+                
+                # Obtener y mostrar resultados
+                if status in ['DONE', 'COMPLETED']:
+                    try:
+                        result = job.result()
+                        
+                        # Extraer resultados del BitArray
+                        if hasattr(result, '_pub_results') and result._pub_results:
+                            pub_result = result._pub_results[0]
+                            
+                            if hasattr(pub_result, 'data') and hasattr(pub_result.data, 'c'):
+                                bit_array = pub_result.data.c
+                                counts = bit_array.get_counts()
+                                
+                                result_text += "## 📊 Resultados de Mediciones\n\n"
+                                result_text += "| Estado Cuántico | Conteo | Porcentaje |\n"
+                                result_text += "|-----------------|--------|------------|\n"
+                                
+                                total = sum(counts.values())
+                                for state, count in sorted(counts.items(), key=lambda x: x[1], reverse=True)[:10]:
+                                    percentage = (count / total) * 100
+                                    result_text += f"| `{state}` | {count:,} | {percentage:.2f}% |\n"
+                                
+                                result_text += f"\n**Total de mediciones:** {total:,}\n\n"
+                                
+                                # Interpretación para estado de Bell
+                                if '00' in counts and '11' in counts:
+                                    result_text += "💡 **Interpretación:** Este patrón sugiere un estado de Bell (entrelazamiento).\n"
+                                    result_text += f"Los estados `00` y `11` aparecen con frecuencias similares, indicando superposición cuántica.\n\n"
+                            else:
+                                result_text += "⚠️ Resultados disponibles pero en formato no esperado.\n"
+                                result_text += f"Usa `ibm_quantum_job` con Job ID `{job.job_id()}` para ver detalles.\n\n"
+                        else:
+                            result_text += "⚠️ Resultados disponibles pero en formato no esperado.\n"
+                            result_text += f"Usa `ibm_quantum_job` con Job ID `{job.job_id()}` para ver detalles.\n\n"
+                            
+                    except Exception as e:
+                        result_text += f"⚠️ Error al obtener resultados: {str(e)}\n"
+                        result_text += f"Usa `ibm_quantum_job` con Job ID `{job.job_id()}` para intentar de nuevo.\n\n"
+                
+                elif status == 'CANCELLED':
+                    result_text += "❌ El trabajo fue cancelado.\n\n"
+                elif status == 'ERROR':
+                    result_text += "🔴 El trabajo terminó con error.\n\n"
+            
             else:
-                result_text += "🖥️ Este circuito se ejecutó en un simulador.\n"
-                result_text += "Para ejecutar en hardware real, especifica 'use_real_device: true'.\n"
+                # No esperar resultados, solo retornar Job ID
+                if input.use_real_device:
+                    result_text += "🎯 **CONFIRMACIÓN:** Este circuito se está ejecutando en HARDWARE CUÁNTICO REAL.\n"
+                    result_text += f"Los resultados estarán disponibles cuando el trabajo termine de ejecutarse en {backend.name}.\n\n"
+                else:
+                    result_text += "🖥️ Este circuito se ejecutó en un simulador.\n\n"
+                
+                result_text += f"💡 Usa `ibm_quantum_job` con Job ID `{job.job_id()}` para consultar los resultados.\n"
             
             return StringToolOutput(result=result_text)
             

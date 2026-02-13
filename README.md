@@ -1,447 +1,424 @@
-# Quantum Lab Agent 🔬⚛️
+# 🔬 Quantum Lab Agent System
 
-Sistema de agentes especializados en computación cuántica con arquitectura A2A (Agent-to-Agent), construido con BeeAI Framework, AgentStack y Watsonx, que utiliza la infraestructura de IBM Quantum.
+A multi-agent system for quantum computing operations using IBM Quantum, built with BeeAI Framework and Watsonx AI.
 
-## 🏗️ Arquitectura del Sistema
+## 🏗️ Architecture
 
-El sistema está compuesto por **dos agentes especializados** que se comunican entre sí mediante el protocolo A2A:
+The system consists of 4 specialized agents communicating via Agent-to-Agent (A2A) protocol:
 
-### 1. 🎯 Quantum Developer Agent (Puerto 8001)
-**Experto en Desarrollo de Código Cuántico**
-
-- **Modelo:** Mistral Large 2512 (Watsonx)
-- **Especialidad:** Generación de código Qiskit y OpenQASM 3.0
-- **Responsabilidades:**
-  - Generar código de circuitos cuánticos
-  - Explicar conceptos de computación cuántica
-  - Proporcionar ejemplos de algoritmos cuánticos
-  - Optimizar circuitos existentes
-  - Documentar código con comentarios claros
-
-### 2. ⚡ Quantum Operations Agent (Puerto 8000)
-**Orquestador de Operaciones Cuánticas**
-
-- **Modelo:** Mistral Small (Watsonx)
-- **Especialidad:** Ejecución y gestión de operaciones cuánticas
-- **Responsabilidades:**
-  - Recibir solicitudes del usuario
-  - Invocar al Developer Agent cuando necesite código
-  - Ejecutar circuitos en IBM Quantum
-  - Consultar estado de computadoras cuánticas
-  - Verificar resultados de trabajos
-  - Obtener información de backends
-
-### 🔄 Flujo de Comunicación A2A
-
-```
-Usuario → Operations Agent → ¿Necesita código? 
-                           ↓
-                    [Sí] → Developer Agent → Genera código QASM/Qiskit
-                           ↓
-                    Operations Agent → Ejecuta en IBM Quantum
-                           ↓
-                    Usuario ← Resultados
+```mermaid
+graph TB
+    User[👤 User] -->|Requests| OpsAgent[🎯 Operations Agent<br/>Port 8000<br/>Mistral Small]
+    
+    OpsAgent -->|Generate Code| DevAgent[💻 Developer Agent<br/>Port 8001<br/>Mistral Large]
+    OpsAgent -->|Query Status| StatusAgent[📊 Status Agent<br/>Port 8002<br/>Mistral Small]
+    OpsAgent -->|Execute Circuit| CompAgent[⚡ Computing Agent<br/>Port 8003<br/>Mistral Small]
+    
+    DevAgent -->|QASM Code| OpsAgent
+    StatusAgent -->|Backend Info<br/>Job Status| OpsAgent
+    CompAgent -->|Job ID<br/>Results| OpsAgent
+    
+    CompAgent -->|Execute| IBM[🔬 IBM Quantum]
+    StatusAgent -->|Query| IBM
+    
+    OpsAgent -->|Response| User
+    
+    style OpsAgent fill:#4A90E2,stroke:#2E5C8A,stroke-width:3px,color:#fff
+    style DevAgent fill:#50C878,stroke:#2E7D4E,stroke-width:2px,color:#fff
+    style StatusAgent fill:#FFB347,stroke:#CC8A38,stroke-width:2px,color:#fff
+    style CompAgent fill:#9B59B6,stroke:#6C3483,stroke-width:2px,color:#fff
+    style IBM fill:#E74C3C,stroke:#A93226,stroke-width:2px,color:#fff
 ```
 
-## 🤖 Capacidades del Sistema
+### Agent Responsibilities
 
-### 💻 Generación de Código (Developer Agent)
-- ✨ Crear circuitos cuánticos en OpenQASM 2.0/3.0
-- 🐍 Generar código Qiskit (Python)
-- 📚 Explicar conceptos cuánticos con ejemplos
-- 🔧 Optimizar circuitos para reducir complejidad
-- 📝 Documentar código con comentarios útiles
+| Agent | Port | Model | Role | Tools |
+|-------|------|-------|------|-------|
+| **Operations** | 8000 | Mistral Small | Main orchestrator, coordinates all agents | 3 A2A clients |
+| **Developer** | 8001 | Mistral Large | Code generation & explanations | None (pure LLM) |
+| **Status** | 8002 | Mistral Small | Query backends & job status | 3 IBM Quantum tools |
+| **Computing** | 8003 | Mistral Small | Execute quantum circuits | 1 IBM Quantum tool |
 
-### 🚀 Operaciones Cuánticas (Operations Agent)
-- 🖥️ Ejecutar circuitos en simuladores de IBM Quantum
-- 💻 Ejecutar circuitos en hardware cuántico real (QPU)
-- 🔄 Transpilación automática para compatibilidad con hardware
-- 📊 Consultar computadoras cuánticas disponibles
-- 🔍 Obtener información detallada de backends
-- 📈 Consultar estado y resultados de trabajos
+## 🔄 Communication Flow
 
-## 🎯 Ejemplos de Uso
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant O as Operations Agent
+    participant D as Developer Agent
+    participant S as Status Agent
+    participant C as Computing Agent
+    participant IBM as IBM Quantum
 
-### Crear y Ejecutar Circuitos
-
-**Superposición:**
-```
-"Crea un circuito de superposición con 3 qubits y ejecútalo en el simulador"
-```
-
-**Estado de Bell:**
-```
-"Dame un ejemplo de un estado de Bell y ejecútalo"
-```
-
-**Algoritmos Cuánticos:**
-```
-"Crea un circuito del algoritmo de Grover y ejecútalo en hardware real"
-```
-
-### Solo Explicaciones (Sin Ejecución)
-
-```
-"Explícame qué es el entrelazamiento cuántico"
-"¿Cómo funciona la teleportación cuántica?"
-"Dame un ejemplo del algoritmo de Deutsch-Jozsa"
-```
-
-### Consultas de Estado
-
-```
-"¿Qué computadoras cuánticas están disponibles?"
-"Dame información detallada de ibm_brisbane"
-"¿Cuál es el backend menos ocupado?"
+    U->>O: "Create a Bell state and execute it on ibm_torino"
+    
+    Note over O: Detects: needs code + execution
+    
+    O->>D: A2A: "Generate Bell state circuit"
+    D->>D: Generate QASM code
+    D-->>O: QASM code + explanation
+    
+    Note over O: Extracts QASM from response
+    
+    O->>C: A2A: "Execute this QASM on ibm_torino"
+    C->>IBM: Submit quantum job
+    IBM-->>C: Job ID: abc123xyz
+    C-->>O: Job ID + execution details
+    
+    O-->>U: Code + Job ID + Instructions
+    
+    Note over U: Later...
+    
+    U->>O: "What's the status of job abc123xyz?"
+    O->>S: A2A: "Query job abc123xyz"
+    S->>IBM: Get job status
+    IBM-->>S: Status + Results
+    S-->>O: Formatted results
+    O-->>U: Job status + measurements
 ```
 
-### Seguimiento de Trabajos
+## 🛠️ Tools Architecture
 
+```mermaid
+graph LR
+    subgraph "Operations Agent Tools"
+        DC[Developer Client<br/>A2A Tool]
+        SC[Status Client<br/>A2A Tool]
+        CC[Computing Client<br/>A2A Tool]
+    end
+    
+    subgraph "Status Agent Tools"
+        ST[Status Tool<br/>List Backends]
+        IT[Info Tool<br/>Backend Details]
+        JT[Job Tool<br/>Job Status/Results]
+    end
+    
+    subgraph "Computing Agent Tools"
+        QT[Quantum Tool<br/>Execute Circuits]
+    end
+    
+    DC -.->|HTTP/JSON-RPC| DevAgent[Developer Agent]
+    SC -.->|HTTP/JSON-RPC| StatusAgent[Status Agent]
+    CC -.->|HTTP/JSON-RPC| CompAgent[Computing Agent]
+    
+    ST -->|Qiskit API| IBM[IBM Quantum]
+    IT -->|Qiskit API| IBM
+    JT -->|Qiskit API| IBM
+    QT -->|Qiskit API| IBM
+    
+    style DC fill:#4A90E2,color:#fff
+    style SC fill:#FFB347,color:#fff
+    style CC fill:#9B59B6,color:#fff
+    style ST fill:#50C878,color:#fff
+    style IT fill:#50C878,color:#fff
+    style JT fill:#50C878,color:#fff
+    style QT fill:#E74C3C,color:#fff
 ```
-"Muéstrame mis trabajos recientes"
-"¿Cuál es el estado del trabajo d671cklbujdc73cvbp30?"
-"Dame los resultados del Job ID abc123xyz"
-```
 
-## 🚀 Instalación y Configuración
-
-### Prerequisitos
+## 📋 Prerequisites
 
 - Python 3.11+
-- Cuenta de IBM Quantum (gratuita)
-- Cuenta de IBM Watsonx (para LLMs)
-- Token de IBM Quantum
-- API Key de Watsonx
+- IBM Quantum account ([Get one here](https://quantum.cloud.ibm.com/))
+- IBM Watsonx account with API key
+- `uv` package manager (recommended) or `pip`
 
-### Paso 1: Clonar el Repositorio
+## 🚀 Quick Start
+
+### 1. Clone and Setup
 
 ```bash
-git clone <your-repo-url>
+git clone <repository-url>
 cd quantum_lab_agent
-```
 
-### Paso 2: Instalar Dependencias
-
-Usando uv (recomendado):
-```bash
+# Install dependencies
 uv sync
-```
-
-O con pip:
-```bash
+# or
 pip install -e .
 ```
 
-### Paso 3: Configurar Credenciales
+### 2. Configure Environment
 
-1. **Obtén tu token de IBM Quantum:**
-   - Visita: https://quantum.cloud.ibm.com/
-   - Copia tu token de acceso
+Create `.env` file from template:
 
-2. **Obtén tus credenciales de Watsonx:**
-   - API Key de Watsonx
-   - Project ID de Watsonx
+```bash
+cp .env.example .env
+```
 
-3. **Configura el archivo `.env`:**
+Edit `.env` with your credentials:
 
 ```env
-# --- IBM QUANTUM CREDENTIALS ---
-QISKIT_IBM_TOKEN=tu_token_ibm_quantum
+# IBM Quantum
+QISKIT_IBM_TOKEN=your_ibm_quantum_token_here
 
-# --- WATSONX CONFIGURATION ---
-WATSONX_API_KEY=tu_api_key_watsonx
-WATSONX_PROJECT_ID=tu_project_id_watsonx
+# Watsonx
+WATSONX_API_KEY=your_watsonx_api_key_here
+WATSONX_PROJECT_ID=your_project_id_here
 WATSONX_API_URL=https://us-south.ml.cloud.ibm.com/ml/v1/text/chat?version=2023-05-29
 
-# --- QUANTUM DEVELOPER AGENT (Puerto 8001) ---
-WATSONX_DEVELOPER_MODEL=mistralai/mistral-large-2512
-DEVELOPER_HOST=127.0.0.1
-DEVELOPER_PORT=8001
-
-# --- QUANTUM OPERATIONS AGENT (Puerto 8000) ---
+# Models (default values shown)
+WATSONX_DEVELOPER_MODEL=mistral-large-2512
 WATSONX_OPERATIONS_MODEL=mistralai/mistral-small-3-1-24b-instruct-2503
-OPERATIONS_HOST=127.0.0.1
-OPERATIONS_PORT=8000
-
-# --- GENERAL SETTINGS ---
-LOG_LEVEL=info
+WATSONX_STATUS_MODEL=mistralai/mistral-small-3-1-24b-instruct-2503
+WATSONX_COMPUTING_MODEL=mistralai/mistral-small-3-1-24b-instruct-2503
 ```
 
-## 🏃 Ejecutar el Sistema
-
-### Opción 1: Ejecutar Ambos Agentes (Recomendado)
-
-**Terminal 1 - Developer Agent:**
-```bash
-python -m beeai_agents.quantum_developer_agent
-```
-
-**Terminal 2 - Operations Agent:**
-```bash
-python -m beeai_agents.quantum_operations_agent
-```
-
-### Opción 2: Usar el Comando CLI
+### 3. Start All Agents
 
 ```bash
-# Iniciar Operations Agent (principal)
-uv run server
+# Start all 4 agents at once
+./start_all.sh
+
+# Or start individually:
+./start_developer.sh   # Port 8001
+./start_status.sh      # Port 8002  
+./start_computing.sh   # Port 8003
+./start_operations.sh  # Port 8000 (start this last)
 ```
 
-**Nota:** Asegúrate de que el Developer Agent esté ejecutándose en el puerto 8001 antes de iniciar el Operations Agent.
+### 4. Verify Agents are Running
 
-### Verificar que los Agentes Están Corriendo
+```bash
+# Check all agents
+curl http://localhost:8000/.well-known/agent-card.json  # Operations
+curl http://localhost:8001/.well-known/agent-card.json  # Developer
+curl http://localhost:8002/.well-known/agent-card.json  # Status
+curl http://localhost:8003/.well-known/agent-card.json  # Computing
+```
 
-- **Developer Agent:** http://127.0.0.1:8001
-- **Operations Agent:** http://127.0.0.1:8000
+## 💬 Usage Examples
 
-## 📁 Estructura del Proyecto
+### Example 1: Generate and Execute a Circuit
+
+```bash
+# Send request to Operations Agent (port 8000)
+curl -X POST http://localhost:8000 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{
+      "role": "user",
+      "content": "Create a Bell state circuit and execute it on ibm_torino"
+    }]
+  }'
+```
+
+**What happens:**
+1. Operations Agent receives request
+2. Calls Developer Agent to generate QASM code
+3. Extracts code from Developer's response
+4. Calls Computing Agent to execute on ibm_torino
+5. Returns Job ID and execution details
+
+### Example 2: Query Available Backends
+
+```bash
+curl -X POST http://localhost:8000 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{
+      "role": "user",
+      "content": "What quantum computers are available?"
+    }]
+  }'
+```
+
+**What happens:**
+1. Operations Agent receives request
+2. Calls Status Agent to query backends
+3. Status Agent uses `ibm_quantum_status` tool
+4. Returns table with all available backends
+
+### Example 3: Check Job Status
+
+```bash
+curl -X POST http://localhost:8000 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{
+      "role": "user",
+      "content": "What is the status of job abc123xyz?"
+    }]
+  }'
+```
+
+**What happens:**
+1. Operations Agent receives request
+2. Calls Status Agent with job ID
+3. Status Agent uses `ibm_quantum_job` tool
+4. Returns job status and results (if completed)
+
+### Example 4: Execute Code from Memory
+
+```bash
+# First, generate code
+curl -X POST http://localhost:8000 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{
+      "role": "user",
+      "content": "Create a superposition circuit"
+    }]
+  }'
+
+# Then, execute it (code is in memory)
+curl -X POST http://localhost:8000 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{
+      "role": "user",
+      "content": "Execute that circuit on ibm_kyiv"
+    }]
+  }'
+```
+
+**What happens:**
+1. Operations Agent searches for QASM code in conversation history
+2. Finds the code from previous message
+3. Calls Computing Agent with the code
+4. Returns Job ID
+
+## 🔧 Development
+
+### Project Structure
 
 ```
 quantum_lab_agent/
-├── src/
-│   └── beeai_agents/
-│       ├── __init__.py                      # Exportaciones del paquete
-│       ├── quantum_developer_agent.py       # Agente experto en código
-│       ├── quantum_operations_agent.py      # Agente orquestador principal
-│       ├── agent.py                         # [LEGACY] Agente antiguo
-│       └── tools/                           # Herramientas del sistema
-│           ├── __init__.py                  # Exportaciones de tools
-│           ├── quantum_tool.py              # Ejecutor de circuitos
-│           ├── quantum_status_tool.py       # Consulta de estado
-│           ├── quantum_info_tool.py         # Info detallada de backends
-│           ├── quantum_job_tool.py          # Consulta de trabajos
-│           └── quantum_developer_client.py  # Cliente A2A para Developer
-├── .env                                     # Configuración (no incluir en git)
-├── pyproject.toml                          # Dependencias del proyecto
-├── README.md                               # Este archivo
-└── Dockerfile                              # Configuración de contenedor
+├── src/beeai_agents/
+│   ├── quantum_operations_agent.py   # Main orchestrator
+│   ├── quantum_developer_agent.py    # Code generation
+│   ├── quantum_status_agent.py       # Status queries
+│   ├── quantum_computing_agent.py    # Circuit execution
+│   └── tools/
+│       ├── quantum_developer_client.py  # A2A client for Developer
+│       ├── quantum_status_client.py     # A2A client for Status
+│       ├── quantum_computing_client.py  # A2A client for Computing
+│       ├── quantum_status_tool.py       # IBM Quantum status tool
+│       ├── quantum_info_tool.py         # IBM Quantum info tool
+│       ├── quantum_job_tool.py          # IBM Quantum job tool
+│       └── quantum_tool.py              # IBM Quantum executor tool
+├── start_all.sh           # Start all agents
+├── start_developer.sh     # Start Developer Agent
+├── start_status.sh        # Start Status Agent
+├── start_computing.sh     # Start Computing Agent
+├── start_operations.sh    # Start Operations Agent
+├── .env.example          # Environment template
+└── README.md             # This file
 ```
 
-## 🛠️ Herramientas del Sistema
+### Running Tests
 
-### 1. 🎯 Quantum Developer Client (A2A)
-**Propósito:** Comunicación con el Developer Agent
-
-**Cuándo se usa:**
-- Usuario pide "crea un circuito"
-- Usuario pide "explica" un concepto
-- Se necesita generar código QASM/Qiskit
-- Usuario pide optimizar código
-
-**Ejemplo:**
-```python
-{
-  "request": "Crea un circuito de superposición con 3 qubits",
-  "format": "qasm"
-}
-```
-
-### 2. 🚀 IBM Quantum Executor
-**Propósito:** Ejecutar circuitos en IBM Quantum
-
-**Características:**
-- Ejecuta código OpenQASM 2.0/3.0
-- Transpilación automática para hardware
-- Soporta simuladores y hardware real
-- Optimización de nivel 3
-
-**Ejemplo:**
-```python
-{
-  "qasm_code": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[2];\ncreg c[2];\nh q[0];\ncx q[0],q[1];\nmeasure q->c;",
-  "use_real_device": false
-}
-```
-
-### 3. 📊 IBM Quantum Status
-**Propósito:** Listar computadoras cuánticas disponibles
-
-**Salida:**
-- Tabla con backends disponibles
-- Número de qubits por backend
-- Estado operacional
-- Trabajos en cola
-- Recomendación del menos ocupado
-
-### 4. 🔍 IBM Quantum Info
-**Propósito:** Información técnica detallada de backends
-
-**Información proporcionada:**
-- Propiedades de qubits (T1, T2, frecuencia)
-- Errores de puertas cuánticas
-- Topología de conectividad
-- Operaciones soportadas
-- Configuración del procesador
-
-### 5. 📈 IBM Quantum Job
-**Propósito:** Consultar estado y resultados de trabajos
-
-**Funcionalidades:**
-- Verificar estado (QUEUED, RUNNING, COMPLETED)
-- Obtener resultados de mediciones
-- Mostrar distribución de probabilidades
-- Listar trabajos recientes
-
-## 🔧 Configuración Avanzada
-
-### Variables de Entorno
-
-| Variable | Descripción | Requerido | Default |
-|----------|-------------|-----------|---------|
-| `QISKIT_IBM_TOKEN` | Token de IBM Quantum | ✅ Sí | - |
-| `WATSONX_API_KEY` | API Key de Watsonx | ✅ Sí | - |
-| `WATSONX_PROJECT_ID` | Project ID de Watsonx | ✅ Sí | - |
-| `WATSONX_DEVELOPER_MODEL` | Modelo para Developer Agent | ❌ No | mistral-large-2512 |
-| `WATSONX_OPERATIONS_MODEL` | Modelo para Operations Agent | ❌ No | mistral-small |
-| `DEVELOPER_PORT` | Puerto del Developer Agent | ❌ No | 8001 |
-| `OPERATIONS_PORT` | Puerto del Operations Agent | ❌ No | 8000 |
-| `LOG_LEVEL` | Nivel de logging | ❌ No | info |
-
-### Cambiar Modelos LLM
-
-Para usar diferentes modelos de Watsonx, edita el `.env`:
-
-```env
-# Usar modelos más grandes
-WATSONX_DEVELOPER_MODEL=mistralai/mistral-large-2512
-WATSONX_OPERATIONS_MODEL=mistralai/mistral-large-2512
-
-# O modelos más pequeños
-WATSONX_DEVELOPER_MODEL=mistralai/mistral-small-3-1-24b-instruct-2503
-WATSONX_OPERATIONS_MODEL=mistralai/mistral-small-3-1-24b-instruct-2503
-```
-
-## 📚 Conceptos de Computación Cuántica
-
-### Puertas Cuánticas Soportadas
-
-- **h (Hadamard)**: Crea superposición
-- **cx (CNOT)**: Puerta controlada NOT, crea entrelazamiento
-- **x, y, z**: Puertas de Pauli (rotaciones)
-- **rx, ry, rz**: Rotaciones parametrizadas
-- **measure**: Mide el estado del qubit
-
-### Ejemplo de Circuito: Estado de Bell
-
-```qasm
-OPENQASM 2.0;
-include "qelib1.inc";
-
-qreg q[2];
-creg c[2];
-
-h q[0];        // Superposición
-cx q[0], q[1]; // Entrelazamiento
-measure q -> c;
-```
-
-Este circuito crea un estado entrelazado entre dos qubits, resultando en mediciones correlacionadas (00 o 11 con ~50% de probabilidad cada uno).
-
-## 🐛 Solución de Problemas
-
-### Developer Agent No Responde
-
-**Verificar que esté corriendo:**
 ```bash
-curl http://127.0.0.1:8001/health
+# Test individual components
+python test_quantum_status.py
+python test_job_results.py
+python test_bell_circuit.py
 ```
 
-**Reiniciar el agente:**
+### Stopping Agents
+
 ```bash
-python -m beeai_agents.quantum_developer_agent
+# Stop all agents
+pkill -f "quantum.*agent"
+
+# Or stop individually
+pkill -f "quantum_operations_agent"
+pkill -f "quantum_developer_agent"
+pkill -f "quantum_status_agent"
+pkill -f "quantum_computing_agent"
 ```
 
-### Operations Agent No Puede Conectarse al Developer
+## 📊 Monitoring
 
-**Error:** `No se pudo conectar al Quantum Developer Agent`
+### View Agent Logs
 
-**Solución:**
-1. Verifica que el Developer Agent esté corriendo en el puerto 8001
-2. Verifica las variables `DEVELOPER_HOST` y `DEVELOPER_PORT` en `.env`
-3. Verifica que no haya firewall bloqueando la conexión
+```bash
+# Operations Agent
+tail -f /tmp/operations_agent.log
 
-### Errores de Watsonx
+# Developer Agent  
+tail -f /tmp/developer_agent.log
 
-**Token inválido:**
-- Verifica `WATSONX_API_KEY` en `.env`
-- Verifica `WATSONX_PROJECT_ID` en `.env`
-- Asegúrate de tener acceso a los modelos Mistral en Watsonx
+# Status Agent
+tail -f /tmp/status_agent.log
 
-**Modelo no disponible:**
-- Verifica que tengas acceso a `mistral-large-2512` y `mistral-small`
-- Consulta la documentación de Watsonx para modelos disponibles
+# Computing Agent
+tail -f /tmp/computing_agent.log
+```
 
-### Errores de IBM Quantum
+### Check Agent Health
 
-**Token inválido:**
-- Verifica `QISKIT_IBM_TOKEN` en `.env`
-- Obtén un nuevo token en https://quantum.cloud.ibm.com/
+```bash
+# Check if agents are responding
+for port in 8000 8001 8002 8003; do
+  echo "Checking port $port..."
+  curl -s http://localhost:$port/.well-known/agent-card.json | jq '.name'
+done
+```
 
-**Backend no disponible:**
-- Usa `ibm_quantum_status` para ver backends disponibles
-- Algunos backends requieren acceso especial
+## 🐛 Troubleshooting
 
-**Transpilación fallida:**
-- El circuito puede ser demasiado complejo para el backend
-- Intenta con un simulador primero
-- Reduce el número de qubits o puertas
+### Agent Won't Start
 
-## 📊 Dependencias Principales
+**Problem:** Port already in use
 
-- **agentstack-sdk** (0.4.0rc1): Orquestación de agentes y servidor A2A
-- **beeai_framework** (>=0.1.76): Framework core del agente
-- **qiskit** (>=1.0.0): Framework de computación cuántica
-- **qiskit-ibm-runtime** (>=0.20.0): Integración con IBM Quantum
-- **httpx**: Cliente HTTP para comunicación A2A
+```bash
+# Find process using port
+lsof -i :8000  # Replace with your port
 
-## 🔄 Migración desde Versión Anterior
+# Kill process
+kill -9 <PID>
+```
 
-Si estabas usando el `agent.py` antiguo:
+**Problem:** Missing dependencies
 
-1. **Actualiza el `.env`** con las nuevas variables
-2. **Inicia ambos agentes** en terminales separadas
-3. **El Operations Agent** reemplaza al `agent.py` antiguo
-4. **La funcionalidad es la misma** pero con mejor arquitectura
+```bash
+# Reinstall dependencies
+uv sync --reinstall
+```
 
-## 🤝 Contribuir
+### Agent Not Responding
 
-Las contribuciones son bienvenidas. Por favor:
+**Problem:** Watsonx API errors
 
-1. Fork el proyecto
-2. Crea una rama para tu feature (`git checkout -b feature/AmazingFeature`)
-3. Commit tus cambios (`git commit -m 'Add some AmazingFeature'`)
-4. Push a la rama (`git push origin feature/AmazingFeature`)
-5. Abre un Pull Request
+- Check your API key in `.env`
+- Verify project ID is correct
+- Check Watsonx service status
 
-## 📄 Licencia
+**Problem:** IBM Quantum connection errors
 
-[Tu Licencia Aquí]
+- Verify your IBM Quantum token
+- Check if you have access to the backends
+- Try using a simulator instead of hardware
 
-## 👥 Autor
+### Memory Issues
 
-**Edgar Bruney** - Desarrollo inicial y arquitectura A2A
+**Problem:** Operations Agent runs out of memory
 
-## 🙏 Agradecimientos
+- The Operations Agent uses `TokenMemory(max_tokens=6000)`
+- Long conversations are automatically truncated
+- Restart the agent to clear memory
 
-- IBM Quantum por la infraestructura de computación cuántica
-- IBM Watsonx por los modelos LLM
-- Equipo de BeeAI Framework
-- Comunidad de AgentStack
-- Proyecto Qiskit
+## 📚 Additional Resources
 
-## 📞 Soporte
+- [BeeAI Framework Documentation](https://github.com/i-am-bee/beeai-framework)
+- [IBM Quantum Documentation](https://docs.quantum.ibm.com/)
+- [Qiskit Documentation](https://qiskit.org/documentation/)
+- [Watsonx Documentation](https://www.ibm.com/products/watsonx-ai)
 
-Si tienes preguntas o problemas:
+## 🤝 Contributing
 
-1. Revisa la sección de [Solución de Problemas](#-solución-de-problemas)
-2. Abre un issue en GitHub
-3. Consulta la documentación de [IBM Quantum](https://quantum.ibm.com/docs)
-4. Revisa la documentación de [BeeAI Framework](https://github.com/i-am-bee/bee-agent-framework)
-5. Consulta la documentación de [Watsonx](https://www.ibm.com/watsonx)
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## 📄 License
+
+This project is licensed under the Apache 2.0 License.
+
+## 🙏 Acknowledgments
+
+- Built with [BeeAI Framework](https://github.com/i-am-bee/beeai-framework)
+- Powered by [IBM Watsonx](https://www.ibm.com/products/watsonx-ai)
+- Quantum computing via [IBM Quantum](https://quantum.ibm.com/)
+- LLMs: Mistral Large & Mistral Small
 
 ---
 
-**¡Feliz computación cuántica con arquitectura A2A! 🔬⚛️🤖**
-
-Made with ❤️ by Bob
+**Made with ❤️ by Bob**

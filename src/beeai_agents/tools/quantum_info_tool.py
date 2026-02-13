@@ -39,7 +39,7 @@ class IBMQuantumInfoTool(Tool[QuantumInfoInput]):
     ) -> StringToolOutput:
         """Get detailed information about a specific quantum computer."""
         try:
-            # Inicializa el servicio
+            # Inicializa el servicio - usa la instancia guardada
             service = QiskitRuntimeService(channel="ibm_quantum_platform")
             
             # Obtener el backend específico
