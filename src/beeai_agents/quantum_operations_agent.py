@@ -14,6 +14,7 @@ Tipo: Servidor A2A principal + Cliente A2A (invoca al Developer)
 """
 
 import os
+from typing import Annotated
 from collections.abc import AsyncGenerator
 
 from a2a.types import AgentSkill, Message
@@ -22,6 +23,7 @@ from agentstack_sdk.server import Server
 from agentstack_sdk.server.context import RunContext
 from agentstack_sdk.a2a.types import AgentMessage
 from agentstack_sdk.a2a.extensions import AgentDetail, AgentDetailTool
+from agentstack_sdk.a2a.extensions import TrajectoryExtensionServer, TrajectoryExtensionSpec
 
 from beeai_framework.agents.react import ReActAgent
 from beeai_framework.backend import ChatModel
@@ -374,8 +376,9 @@ def create_operations_agent():
 )
 async def quantum_operations_agent(
     input: Message,
-    context: RunContext
-) -> AsyncGenerator[AgentMessage, None]:
+    context: RunContext,
+    trajectory: Annotated[TrajectoryExtensionServer, TrajectoryExtensionSpec()]
+):
     """
     Handler principal del Quantum Operations Agent.
     
@@ -387,17 +390,40 @@ async def quantum_operations_agent(
     print(f"⚡ [Operations Agent] Received query: '{user_query[:100]}...'")
     print("=" * 80)
     
+    # Paso 1: Análisis de la solicitud
+    yield trajectory.trajectory_metadata(
+        title="🔍 Analizando solicitud",
+        content=f"Procesando la consulta del usuario:\n```\n{user_query[:200]}{'...' if len(user_query) > 200 else ''}\n```"
+    )
+    
     # Crear el agente con las instrucciones y herramientas
     agent = create_operations_agent()
     
+    # Paso 2: Preparación del agente
+    yield trajectory.trajectory_metadata(
+        title="🤖 Preparando agente ReAct",
+        content="**Configuración:**\n- Modelo: Mistral Small 3.1\n- Herramientas: Developer Client, Status Client, Computing Client\n- Memoria: 6K tokens"
+    )
+    
     # Construir el prompt con las instrucciones del sistema
-    # El ReActAgent usa su propio esquema interno, no necesitamos especificar el formato
     full_prompt = f"{OPERATIONS_INSTRUCTIONS}\n\n---\n\nSOLICITUD DEL USUARIO:\n{user_query}"
+    
+    # Paso 3: Ejecución del agente
+    yield trajectory.trajectory_metadata(
+        title="⚙️ Ejecutando razonamiento",
+        content="El agente está analizando la solicitud y decidiendo qué herramientas usar..."
+    )
     
     # Ejecutar el agente
     try:
         # Ejecutar sin emitter explícito - el agente usa su propio emitter interno
         run_context = await agent.run(full_prompt)
+        
+        # Actualizar trayectoria con progreso
+        yield trajectory.trajectory_metadata(
+            title="✅ Procesamiento completado",
+            content="- [x] Razonamiento completado\n- [x] Herramientas ejecutadas\n- [x] Respuesta generada"
+        )
         
         # Extraer la respuesta
         response = ""
@@ -420,6 +446,12 @@ async def quantum_operations_agent(
         if not isinstance(response, str):
             response = str(response)
         
+        # Paso 4: Respuesta generada
+        yield trajectory.trajectory_metadata(
+            title="✅ Respuesta generada",
+            content=f"Respuesta lista ({len(response)} caracteres)\n\n**Resumen:**\n- Herramientas utilizadas\n- Tiempo de procesamiento: Completado"
+        )
+        
         print("=" * 80)
         print(f"✅ [Operations Agent] Response generated ({len(response)} chars)")
         print("=" * 80)
@@ -433,6 +465,12 @@ async def quantum_operations_agent(
         error_details += f"Detalles: {str(e)}\n\n"
         error_details += "Traceback:\n"
         error_details += traceback.format_exc()
+        
+        # Trayectoria de error
+        yield trajectory.trajectory_metadata(
+            title="❌ Error detectado",
+            content=f"**Tipo:** {type(e).__name__}\n**Mensaje:** {str(e)}\n\nConsulta los logs para más detalles."
+        )
         
         print("=" * 80)
         print(f"🔴 [Operations Agent] {error_msg}")
