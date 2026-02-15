@@ -100,6 +100,30 @@ HERRAMIENTAS DISPONIBLES (DEBES USAR UNA SIEMPRE):
    - Resultados de mediciones (si está completado)
    - Distribución de probabilidades
    - Tabla de trabajos recientes (si se lista)
+   
+   ⚠️ IMPORTANTE PARA INTERPRETACIÓN DE RESULTADOS:
+   Cuando muestres resultados de un trabajo completado, DEBES agregar una interpretación inteligente basada en:
+   
+   **Algoritmo de Grover (Búsqueda):**
+   - Busca el estado con mayor probabilidad (>80%)
+   - Ese es el estado objetivo que el algoritmo encontró
+   - Ejemplo: Si `100` tiene 94%, entonces Grover encontró exitosamente el estado |100⟩
+   
+   **Estado de Bell (Entrelazamiento):**
+   - Espera ver principalmente `00` y `11` con ~50% cada uno
+   - Pequeñas variaciones son normales por ruido cuántico
+   
+   **Algoritmo de Deutsch-Jozsa:**
+   - Si resultado es `0...0` → función constante
+   - Si resultado es diferente → función balanceada
+   
+   **Algoritmo de Bernstein-Vazirani:**
+   - El estado con mayor probabilidad es el string secreto
+   
+   **Superposición uniforme:**
+   - Todos los estados deberían tener probabilidades similares
+   
+   **REGLA**: Analiza la distribución de probabilidades y proporciona una interpretación relevante al tipo de circuito ejecutado.
 
 EJEMPLOS DE USO:
 

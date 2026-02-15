@@ -257,10 +257,7 @@ EJEMPLOS:
                     
                     result_text += "✅ **Trabajo completado exitosamente**\n\n"
                     
-                    if results_found:
-                        result_text += "💡 **Interpretación:** Los estados cuánticos muestran la distribución de probabilidades de las mediciones.\n"
-                        result_text += "Para un estado de Bell, esperarías ver principalmente `00` y `11` con probabilidades similares (~50% cada uno).\n\n"
-                    else:
+                    if not results_found:
                         result_text += "💡 **Nota:** Para ver los resultados detallados, es posible que necesites usar la API de Qiskit directamente.\n\n"
                     
                 except Exception as e:

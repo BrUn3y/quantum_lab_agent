@@ -5,12 +5,13 @@ from beeai_framework.context import RunContext
 from pydantic import BaseModel, Field
 from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2
 from qiskit import QuantumCircuit, transpile
+from qiskit.qasm2 import dumps as qasm2_dumps
 from typing import Optional
 import asyncio
 import time
 
 class QuantumInput(BaseModel):
-    qasm_code: str = Field(description="El código en formato OpenQASM 3.0 del circuito. Debe ser código QASM válido con include, qreg, creg y measure.")
+    qasm_code: str = Field(description="Código del circuito cuántico. Puede ser OpenQASM 2.0/3.0 O código Qiskit Python. El sistema detecta automáticamente el formato y convierte si es necesario.")
     use_real_device: bool = Field(default=False, description="Si es True, usa hardware cuántico real (QPU). Si es False, usa simulador.")
     backend_name: str = Field(default="", description="Nombre específico del backend a usar (opcional). Si está vacío, se selecciona automáticamente.")
     wait_for_results: bool = Field(default=False, description="Si es True, espera a que el trabajo termine y muestra los resultados. Si es False, solo retorna el Job ID inmediatamente.")
@@ -25,7 +26,36 @@ class IBMQuantumTool(Tool[QuantumInput]):
     
     @property
     def description(self) -> str:
-        return "Ejecuta circuitos cuánticos en la infraestructura de IBM Quantum (Simuladores o QPU)."
+        return """Ejecuta circuitos cuánticos en IBM Quantum (Simuladores o QPU).
+        
+FORMATOS SOPORTADOS:
+1. OpenQASM 2.0/3.0 - Lenguaje de ensamblador cuántico
+2. Qiskit Python - Código Python usando QuantumCircuit
+
+El sistema detecta automáticamente el formato y convierte Qiskit a QASM si es necesario.
+
+EJEMPLOS:
+
+OpenQASM:
+```qasm
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+creg c[2];
+h q[0];
+cx q[0],q[1];
+measure q -> c;
+```
+
+Qiskit Python:
+```python
+from qiskit import QuantumCircuit
+qc = QuantumCircuit(2, 2)
+qc.h(0)
+qc.cx(0, 1)
+qc.measure_all()
+```
+"""
     
     @property
     def input_schema(self) -> type[QuantumInput]:
@@ -60,14 +90,59 @@ class IBMQuantumTool(Tool[QuantumInput]):
                 backend = service.backend("ibmq_qasm_simulator")
                 backend_type = "🖥️ Simulador"
 
-            # Validar que el código QASM sea correcto
-            if "OPENQASM" not in input.qasm_code and "include" not in input.qasm_code:
-                return StringToolOutput(
-                    result="❌ Error: El código QASM debe incluir 'OPENQASM 3.0' o 'OPENQASM 2.0' y 'include \"stdgates.inc\"' o 'include \"qelib1.inc\"'"
-                )
+            # Detectar el formato del código y convertir si es necesario
+            code_format = "QASM"
+            qasm_code = input.qasm_code
+            
+            # Detectar si es código Qiskit Python
+            if "QuantumCircuit" in input.qasm_code or "from qiskit" in input.qasm_code:
+                code_format = "Qiskit"
+                result_text = f"🔄 **Detectado código Qiskit Python - Convirtiendo a QASM...**\n\n"
+                
+                try:
+                    # Ejecutar el código Qiskit para obtener el circuito
+                    local_vars = {}
+                    exec(input.qasm_code, {"QuantumCircuit": QuantumCircuit, "qiskit": __import__("qiskit")}, local_vars)
+                    
+                    # Buscar el objeto QuantumCircuit en las variables locales
+                    qc = None
+                    for var_name, var_value in local_vars.items():
+                        if isinstance(var_value, QuantumCircuit):
+                            qc = var_value
+                            break
+                    
+                    if qc is None:
+                        return StringToolOutput(
+                            result="❌ Error: No se encontró un objeto QuantumCircuit en el código Qiskit.\n"
+                                   "Asegúrate de crear un circuito con `qc = QuantumCircuit(...)`"
+                        )
+                    
+                    # Convertir a QASM usando la función dumps
+                    qasm_code = qasm2_dumps(qc)
+                    
+                    result_text += f"✅ Conversión exitosa\n"
+                    result_text += f"   • Qubits: {qc.num_qubits}\n"
+                    result_text += f"   • Puertas: {len(qc.data)}\n"
+                    result_text += f"   • Formato destino: OpenQASM 2.0\n\n"
+                    result_text += f"**Código QASM generado:**\n```qasm\n{qasm_code}\n```\n\n"
+                    
+                except Exception as e:
+                    return StringToolOutput(
+                        result=f"❌ Error al ejecutar código Qiskit: {str(e)}\n\n"
+                               "Verifica que el código sea válido y use la sintaxis correcta de Qiskit."
+                    )
+            else:
+                result_text = ""
+                # Validar que el código QASM sea correcto
+                if "OPENQASM" not in qasm_code and "include" not in qasm_code:
+                    return StringToolOutput(
+                        result="❌ Error: El código debe ser OpenQASM válido o código Qiskit Python.\n\n"
+                               "OpenQASM debe incluir 'OPENQASM 2.0' o 'OPENQASM 3.0' y 'include \"qelib1.inc\"'\n"
+                               "Qiskit debe usar 'from qiskit import QuantumCircuit'"
+                    )
 
             # Convertir el string QASM a un objeto QuantumCircuit
-            qc = QuantumCircuit.from_qasm_str(input.qasm_code)
+            qc = QuantumCircuit.from_qasm_str(qasm_code)
             
             # Verificar que el circuito tenga mediciones
             if not any(instr.operation.name == 'measure' for instr in qc.data):
