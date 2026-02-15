@@ -21,6 +21,7 @@ from a2a.types import AgentSkill, Message
 from a2a.utils.message import get_message_text
 from agentstack_sdk.server import Server
 from agentstack_sdk.server.context import RunContext
+from agentstack_sdk.server.store.platform_context_store import PlatformContextStore
 from agentstack_sdk.a2a.types import AgentMessage
 from agentstack_sdk.a2a.extensions import AgentDetail, AgentDetailTool
 from agentstack_sdk.a2a.extensions import TrajectoryExtensionServer, TrajectoryExtensionSpec
@@ -384,16 +385,29 @@ async def quantum_operations_agent(
     
     Este agente orquesta todas las operaciones cuánticas y decide
     cuándo invocar al Developer Agent o usar herramientas directamente.
+    
+    Incluye gestión de historial de conversación para mantener contexto.
     """
+    # PASO 0: Almacenar el mensaje del usuario en el historial
+    await context.store(input)
+    
     user_query = get_message_text(input)
     print("=" * 80)
     print(f"⚡ [Operations Agent] Received query: '{user_query[:100]}...'")
     print("=" * 80)
     
+    # Cargar historial de conversación
+    history = [
+        message async for message in context.load_history()
+        if isinstance(message, Message) and message.parts
+    ]
+    
+    print(f"📚 [History] Loaded {len(history)} messages from conversation history")
+    
     # Paso 1: Análisis de la solicitud
     yield trajectory.trajectory_metadata(
         title="🔍 Analizando solicitud",
-        content=f"Procesando la consulta del usuario:\n```\n{user_query[:200]}{'...' if len(user_query) > 200 else ''}\n```"
+        content=f"Procesando la consulta del usuario:\n```\n{user_query[:200]}{'...' if len(user_query) > 200 else ''}\n```\n\n**Contexto:** {len(history)} mensajes en el historial"
     )
     
     # Crear el agente con las instrucciones y herramientas
@@ -402,11 +416,22 @@ async def quantum_operations_agent(
     # Paso 2: Preparación del agente
     yield trajectory.trajectory_metadata(
         title="🤖 Preparando agente ReAct",
-        content="**Configuración:**\n- Modelo: Mistral Small 3.1\n- Herramientas: Developer Client, Status Client, Computing Client\n- Memoria: 6K tokens"
+        content=f"**Configuración:**\n- Modelo: Mistral Small 3.1\n- Herramientas: Developer Client, Status Client, Computing Client\n- Memoria: 6K tokens\n- Historial: {len(history)} mensajes cargados"
     )
     
-    # Construir el prompt con las instrucciones del sistema
-    full_prompt = f"{OPERATIONS_INSTRUCTIONS}\n\n---\n\nSOLICITUD DEL USUARIO:\n{user_query}"
+    # Construir el contexto de conversación para el prompt
+    conversation_context = ""
+    if len(history) > 1:  # Más de 1 mensaje (el actual)
+        conversation_context = "\n\n---\n\nHISTORIAL DE CONVERSACIÓN:\n"
+        # Incluir los últimos 5 mensajes (excluyendo el actual)
+        recent_history = history[-6:-1] if len(history) > 5 else history[:-1]
+        for i, msg in enumerate(recent_history, 1):
+            msg_text = get_message_text(msg)
+            role = "Usuario" if msg.role.value == "user" else "Asistente"
+            conversation_context += f"\n{i}. [{role}]: {msg_text[:150]}{'...' if len(msg_text) > 150 else ''}\n"
+    
+    # Construir el prompt con las instrucciones del sistema y el contexto
+    full_prompt = f"{OPERATIONS_INSTRUCTIONS}{conversation_context}\n\n---\n\nSOLICITUD ACTUAL DEL USUARIO:\n{user_query}"
     
     # Paso 3: Ejecución del agente
     yield trajectory.trajectory_metadata(
@@ -456,7 +481,15 @@ async def quantum_operations_agent(
         print(f"✅ [Operations Agent] Response generated ({len(response)} chars)")
         print("=" * 80)
         
-        yield AgentMessage(text=response)
+        # Crear el mensaje de respuesta
+        response_message = AgentMessage(text=response)
+        
+        # Yield la respuesta al usuario
+        yield response_message
+        
+        # IMPORTANTE: Almacenar la respuesta en el historial para futuras interacciones
+        await context.store(response_message)
+        print("📚 [History] Response stored in conversation history")
         
     except Exception as e:
         import traceback
@@ -480,7 +513,7 @@ async def quantum_operations_agent(
         yield AgentMessage(text=error_msg + error_details)
 
 def run():
-    """Inicia el servidor del Quantum Operations Agent"""
+    """Inicia el servidor del Quantum Operations Agent con almacenamiento persistente"""
     port = int(os.getenv("OPERATIONS_PORT", 8000))
     host = os.getenv("OPERATIONS_HOST", "127.0.0.1")
     
@@ -492,6 +525,8 @@ def run():
     print(f"  🌐 Host: {host}")
     print(f"  🔌 Port: {port}")
     print(f"  🛠️  Tools: 3 (Developer Client A2A, Status Client A2A, Computing Client A2A)")
+    print(f"  📚 History: Persistent storage enabled (PlatformContextStore)")
+    print(f"  🎯 Trajectory: Visualization enabled")
     print(f"  🔗 Developer Agent: http://{os.getenv('DEVELOPER_HOST', '127.0.0.1')}:{os.getenv('DEVELOPER_PORT', '8001')}")
     print(f"  🔗 Status Agent: http://{os.getenv('STATUS_HOST', '127.0.0.1')}:{os.getenv('STATUS_PORT', '8002')}")
     print(f"  🔗 Computing Agent: http://{os.getenv('COMPUTING_HOST', '127.0.0.1')}:{os.getenv('COMPUTING_PORT', '8003')}")
@@ -502,7 +537,12 @@ def run():
     print("   - Computing Agent (8003)")
     print("=" * 80)
     
-    server.run(host=host, port=port)
+    # Habilitar almacenamiento persistente de conversaciones
+    server.run(
+        host=host,
+        port=port,
+        context_store=PlatformContextStore()  # Almacenamiento persistente
+    )
 
 if __name__ == "__main__":
     run()
