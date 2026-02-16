@@ -58,5 +58,3 @@ __all__ = [
 ]
 
 __version__ = "2.0.0"  # Arquitectura A2A con 4 agentes especializados
-
-# Made with Bob

@@ -218,5 +218,3 @@ El Job ID es crítico porque el usuario lo necesita para consultar resultados de
             error_text += f"Tipo de error: {type(e).__name__}\n"
             error_text += f"Detalles técnicos: {str(e)}"
             return StringToolOutput(result=error_text)
-
-# Made with Bob

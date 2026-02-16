@@ -34,5 +34,3 @@ __all__ = [
     "QuantumStatusClient",
     "QuantumComputingClient",
 ]
-
-# Made with Bob

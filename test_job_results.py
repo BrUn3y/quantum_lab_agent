@@ -65,5 +65,3 @@ try:
                     print(f"  {attr}: Error - {e}")
 except Exception as e:
     print(f"Error: {e}")
-
-# Made with Bob

@@ -99,5 +99,3 @@ async def test_trajectory():
 
 if __name__ == "__main__":
     asyncio.run(test_trajectory())
-
-# Made with Bob

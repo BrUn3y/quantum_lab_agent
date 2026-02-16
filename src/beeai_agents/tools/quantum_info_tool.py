@@ -229,5 +229,3 @@ class IBMQuantumInfoTool(Tool[QuantumInfoInput]):
             error_text += "- Tu token de IBM Quantum sea válido\n"
             error_text += "- Tengas acceso al backend solicitado\n"
             return StringToolOutput(result=error_text)
-
-# Made with Bob

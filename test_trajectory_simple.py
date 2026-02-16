@@ -82,5 +82,3 @@ print()
 print("🎯 Ejemplo de consulta:")
 print('   "Crea un circuito de superposición con 2 qubits y ejecútalo"')
 print()
-
-# Made with Bob

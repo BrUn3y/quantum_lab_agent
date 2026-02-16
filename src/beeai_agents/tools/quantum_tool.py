@@ -281,5 +281,3 @@ qc.measure_all()
         except Exception as e:
             error_text = f"❌ Error al ejecutar el circuito cuántico: {str(e)}"
             return StringToolOutput(result=error_text)
-
-# Made with Bob

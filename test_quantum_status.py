@@ -94,5 +94,3 @@ def test_quantum_status():
 
 if __name__ == "__main__":
     test_quantum_status()
-
-# Made with Bob

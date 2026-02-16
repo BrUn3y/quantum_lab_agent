@@ -387,5 +387,3 @@ EJEMPLOS:
             return StringToolOutput(
                 result=f"❌ Error al listar trabajos: {str(e)}"
             )
-
-# Made with Bob

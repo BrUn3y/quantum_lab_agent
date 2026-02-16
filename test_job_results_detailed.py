@@ -95,5 +95,3 @@ if hasattr(result, 'metadata'):
 print("\n" + "=" * 80)
 print("✅ Análisis Completo")
 print("=" * 80)
-
-# Made with Bob

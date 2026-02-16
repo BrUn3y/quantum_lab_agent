@@ -126,5 +126,3 @@ print("   Agente: [Genera explicación y código QASM]")
 print("   Usuario: 'Ejecuta ese código en ibm_torino'")
 print("   Agente: [Busca el código en el historial y lo ejecuta] ✅")
 print()
-
-# Made with Bob

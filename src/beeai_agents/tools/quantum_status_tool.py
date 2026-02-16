@@ -111,5 +111,3 @@ class IBMQuantumStatusTool(Tool[QuantumStatusInput]):
             error_text = f"❌ Error al consultar el estado de las computadoras cuánticas: {str(e)}\n\n"
             error_text += "Verifica que tu token de IBM Quantum sea válido y tenga los permisos necesarios."
             return StringToolOutput(result=error_text)
-
-# Made with Bob

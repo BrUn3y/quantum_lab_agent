@@ -25,5 +25,3 @@ print("\nReActAgent.run signature:")
 sig = inspect.signature(agent.run)
 for name, param in sig.parameters.items():
     print(f"  {name}: {param.annotation}")
-
-# Made with Bob

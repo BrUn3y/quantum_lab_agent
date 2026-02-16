@@ -194,5 +194,3 @@ SALIDA:
             error_text += f"Tipo de error: {type(e).__name__}\n"
             error_text += f"Detalles técnicos: {str(e)}"
             return StringToolOutput(result=error_text)
-
-# Made with Bob
