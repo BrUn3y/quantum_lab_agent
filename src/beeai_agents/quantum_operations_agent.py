@@ -37,10 +37,52 @@ from .tools import (
     QuantumComputingClient,
 )
 
-# Instrucciones para el Operations Agent
-OPERATIONS_INSTRUCTIONS = """Eres el Quantum Operations Agent, el orquestador principal del sistema de computación cuántica.
+def detect_language(text: str) -> str:
+    """
+    Detecta el idioma del texto del usuario (español o inglés).
+    
+    Args:
+        text: Texto a analizar
+        
+    Returns:
+        'es' para español, 'en' para inglés
+    """
+    # Palabras clave comunes en español
+    spanish_keywords = [
+        'qué', 'cuál', 'cómo', 'dónde', 'cuándo', 'por qué', 'para qué',
+        'explícame', 'muéstrame', 'dame', 'crea', 'ejecuta', 'córrelo',
+        'circuito', 'computadora', 'trabajo', 'estado', 'disponible',
+        'cuántico', 'cuántica', 'algoritmo', 'código', 'backend',
+        'y', 'el', 'la', 'los', 'las', 'un', 'una', 'de', 'en', 'con'
+    ]
+    
+    # Palabras clave comunes en inglés
+    english_keywords = [
+        'what', 'which', 'how', 'where', 'when', 'why',
+        'explain', 'show', 'give', 'create', 'execute', 'run',
+        'circuit', 'computer', 'job', 'state', 'available',
+        'quantum', 'algorithm', 'code', 'backend',
+        'the', 'a', 'an', 'of', 'in', 'with', 'and', 'or'
+    ]
+    
+    text_lower = text.lower()
+    
+    # Contar coincidencias
+    spanish_count = sum(1 for word in spanish_keywords if word in text_lower)
+    english_count = sum(1 for word in english_keywords if word in text_lower)
+    
+    # Retornar el idioma con más coincidencias
+    return 'es' if spanish_count > english_count else 'en'
 
-TU ROL:
+# Instrucciones para el Operations Agent
+OPERATIONS_INSTRUCTIONS = """You are the Quantum Operations Agent, the main orchestrator of the quantum computing system.
+
+⚠️ CRITICAL LANGUAGE RULE:
+- If the user writes in SPANISH, respond ALWAYS in SPANISH
+- If the user writes in ENGLISH, respond ALWAYS in ENGLISH
+- Detect the language from the user's query and maintain that language throughout your response
+
+YOUR ROLE:
 - Analizar las solicitudes del usuario
 - Decidir qué agente especializado invocar (Developer, Status o Computing)
 - Coordinar la comunicación entre agentes vía A2A
@@ -419,19 +461,30 @@ async def quantum_operations_agent(
         content=f"**Configuración:**\n- Modelo: Mistral Small 3.1\n- Herramientas: Developer Client, Status Client, Computing Client\n- Memoria: 6K tokens\n- Historial: {len(history)} mensajes cargados"
     )
     
+    # Detectar el idioma de la consulta del usuario
+    detected_language = detect_language(user_query)
+    language_instruction = ""
+    
+    if detected_language == 'es':
+        language_instruction = "\n\n⚠️ IDIOMA DETECTADO: ESPAÑOL - Responde TODA tu respuesta en ESPAÑOL.\n"
+        print(f"🌐 [Language] Detected: Spanish")
+    else:
+        language_instruction = "\n\n⚠️ DETECTED LANGUAGE: ENGLISH - Respond your ENTIRE response in ENGLISH.\n"
+        print(f"🌐 [Language] Detected: English")
+    
     # Construir el contexto de conversación para el prompt
     conversation_context = ""
     if len(history) > 1:  # Más de 1 mensaje (el actual)
-        conversation_context = "\n\n---\n\nHISTORIAL DE CONVERSACIÓN:\n"
+        conversation_context = "\n\n---\n\nCONVERSATION HISTORY / HISTORIAL DE CONVERSACIÓN:\n"
         # Incluir los últimos 5 mensajes (excluyendo el actual)
         recent_history = history[-6:-1] if len(history) > 5 else history[:-1]
         for i, msg in enumerate(recent_history, 1):
             msg_text = get_message_text(msg)
-            role = "Usuario" if msg.role.value == "user" else "Asistente"
+            role = "User / Usuario" if msg.role.value == "user" else "Assistant / Asistente"
             conversation_context += f"\n{i}. [{role}]: {msg_text[:150]}{'...' if len(msg_text) > 150 else ''}\n"
     
-    # Construir el prompt con las instrucciones del sistema y el contexto
-    full_prompt = f"{OPERATIONS_INSTRUCTIONS}{conversation_context}\n\n---\n\nSOLICITUD ACTUAL DEL USUARIO:\n{user_query}"
+    # Construir el prompt con las instrucciones del sistema, idioma detectado y el contexto
+    full_prompt = f"{OPERATIONS_INSTRUCTIONS}{language_instruction}{conversation_context}\n\n---\n\nCURRENT USER REQUEST / SOLICITUD ACTUAL DEL USUARIO:\n{user_query}"
     
     # Paso 3: Ejecución del agente
     yield trajectory.trajectory_metadata(
