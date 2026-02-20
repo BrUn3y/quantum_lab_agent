@@ -153,7 +153,7 @@ QISKIT_IBM_TOKEN=your_ibm_quantum_token_here
 # Watsonx
 WATSONX_API_KEY=your_watsonx_api_key_here
 WATSONX_PROJECT_ID=your_project_id_here
-WATSONX_API_URL=https://us-south.ml.cloud.ibm.com/ml/v1/text/chat?version=2023-05-29
+WATSONX_API_URL=https://us-south.ml.cloud.ibm.com.....
 
 # Models (default values shown)
 WATSONX_DEVELOPER_MODEL=mistral-large-2512
@@ -421,4 +421,4 @@ This project is licensed under the Apache 2.0 License.
 
 ---
 
-**Made with ❤️ by Bob**
+**Made with ❤️ using BeeAI, Qiskit, and IBM Quantum Lab**
