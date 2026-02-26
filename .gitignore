@@ -102,6 +102,12 @@ Thumbs.db
 *.tmp
 *.temp
 
+# Temporary visualizations
+temp_visualizations/
+*.png
+*.jpg
+*.jpeg
+
 # Sensitive data
 *.key
 *.pem

@@ -11,16 +11,25 @@ Este agente es un especialista en:
 
 Modelo: mistralai/mistral-large-2 (Watsonx)
 Puerto: 8001
-Tipo: Servidor A2A usando BeeAI Framework (ReActAgent sin tools)
+Tipo: Servidor AgentStack con A2A (ReActAgent sin tools)
 """
 
 import os
+from typing import Annotated
+from collections.abc import AsyncGenerator
 
-from beeai_framework.adapters.a2a import A2AServer, A2AServerConfig
+from a2a.types import AgentSkill, Message
+from a2a.utils.message import get_message_text
+from agentstack_sdk.server import Server
+from agentstack_sdk.server.context import RunContext
+from agentstack_sdk.server.store.platform_context_store import PlatformContextStore
+from agentstack_sdk.a2a.types import AgentMessage
+from agentstack_sdk.a2a.extensions import AgentDetail, AgentDetailTool
+from agentstack_sdk.a2a.extensions import TrajectoryExtensionServer, TrajectoryExtensionSpec
+
 from beeai_framework.agents.react import ReActAgent
 from beeai_framework.backend import ChatModel
 from beeai_framework.memory import UnconstrainedMemory
-from beeai_framework.serve.utils import LRUMemoryManager
 
 # Instrucciones especializadas para el Developer Agent
 DEVELOPER_INSTRUCTIONS = """Eres un Experto en Desarrollo de Código Cuántico y Algoritmos Cuánticos con profundo conocimiento en Qiskit y OpenQASM.
@@ -299,6 +308,74 @@ RECUERDA:
 - NO confundas diferentes algoritmos cuánticos
 """
 
+# Detalles del agente para AgentStack
+DEVELOPER_AGENT_DETAIL = AgentDetail(
+    user_greeting="👨‍💻 ¡Hola! Soy el Quantum Developer Agent. Soy experto en generar código cuántico (Qiskit/QASM), explicar conceptos de computación cuántica y crear algoritmos cuánticos clásicos como Grover, Shor, Deutsch-Jozsa y más.",
+    version="1.0.0",
+    framework="BeeAI + Watsonx + A2A",
+    author={"name": "Edgar Bruney"},
+    tools=[
+        AgentDetailTool(
+            name="Quantum Code Generation",
+            description="Genera código QASM 2.0/3.0 y Qiskit para circuitos cuánticos y algoritmos."
+        ),
+        AgentDetailTool(
+            name="Quantum Concepts Explanation",
+            description="Explica conceptos de computación cuántica con ejemplos de código y aplicaciones prácticas."
+        ),
+        AgentDetailTool(
+            name="Algorithm Implementation",
+            description="Implementa algoritmos cuánticos clásicos: Grover, Shor, Deutsch-Jozsa, Bernstein-Vazirani, QFT, Simon, etc."
+        )
+    ],
+)
+
+# Skills expuestos por el agente
+DEVELOPER_AGENT_SKILLS = [
+    AgentSkill(
+        id="quantum-code-generation",
+        name="Quantum Code Generation",
+        description="Genera código cuántico completo y funcional en QASM y Qiskit con explicaciones detalladas.",
+        tags=["Quantum Computing", "Code Generation", "QASM", "Qiskit"],
+        examples=[
+            "Crea un circuito de superposición con 3 qubits",
+            "Generate a Bell state circuit in QASM",
+            "Implementa el algoritmo de Grover para 3 qubits",
+            "Create a QFT circuit for 4 qubits",
+            "Genera código para teleportación cuántica"
+        ]
+    ),
+    AgentSkill(
+        id="quantum-explanations",
+        name="Quantum Concepts Explanation",
+        description="Explica conceptos de computación cuántica con ejemplos prácticos y código ejecutable.",
+        tags=["Quantum Computing", "Education", "Explanations"],
+        examples=[
+            "Explícame qué es el entrelazamiento cuántico",
+            "What is quantum superposition?",
+            "Explica cómo funciona el algoritmo de Grover",
+            "What is the quantum Fourier transform?",
+            "Explícame la diferencia entre un qubit y un bit clásico"
+        ]
+    ),
+    AgentSkill(
+        id="quantum-algorithms",
+        name="Quantum Algorithm Implementation",
+        description="Implementa algoritmos cuánticos clásicos con código completo y explicaciones paso a paso.",
+        tags=["Quantum Computing", "Algorithms", "Grover", "Shor", "Deutsch-Jozsa"],
+        examples=[
+            "Implementa el algoritmo de Grover",
+            "Create Deutsch-Jozsa algorithm",
+            "Genera el algoritmo de Bernstein-Vazirani",
+            "Implement Shor's algorithm",
+            "Crea un circuito de amplitude amplification"
+        ]
+    )
+]
+
+# Crear servidor AgentStack
+server = Server()
+
 def create_developer_agent():
     """Crea una instancia del Quantum Developer Agent con Mistral Large"""
     # Configurar Watsonx con Mistral Large
@@ -307,42 +384,151 @@ def create_developer_agent():
     )
     
     # Usar ReActAgent sin herramientas (solo para razonamiento y generación de código)
-    # Las instrucciones están embebidas en el prompt del sistema
     return ReActAgent(
         llm=llm,
         tools=[],  # Sin herramientas - solo generación de código
         memory=UnconstrainedMemory(),
     )
 
+@server.agent(
+    name="Quantum Developer Agent",
+    detail=DEVELOPER_AGENT_DETAIL,
+    skills=DEVELOPER_AGENT_SKILLS
+)
+async def quantum_developer_agent(
+    input: Message,
+    context: RunContext,
+    trajectory: Annotated[TrajectoryExtensionServer, TrajectoryExtensionSpec()]
+):
+    """
+    Handler principal del Quantum Developer Agent.
+    
+    Este agente genera código cuántico y proporciona explicaciones detalladas
+    de conceptos y algoritmos de computación cuántica.
+    """
+    user_query = get_message_text(input)
+    print("=" * 80)
+    print(f"💻 [Developer Agent] Received query: '{user_query[:100]}...'")
+    print("=" * 80)
+    
+    # Paso 1: Análisis de la solicitud
+    yield trajectory.trajectory_metadata(
+        title="🔍 Analizando solicitud de código",
+        content=f"Procesando la consulta del usuario:\n```\n{user_query[:200]}{'...' if len(user_query) > 200 else ''}\n```"
+    )
+    
+    # Crear el agente con las instrucciones
+    agent = create_developer_agent()
+    
+    # Paso 2: Preparación del agente
+    yield trajectory.trajectory_metadata(
+        title="🤖 Preparando agente de desarrollo",
+        content=f"**Configuración:**\n- Modelo: Mistral Large 2\n- Especialidad: Generación de código cuántico\n- Memoria: Ilimitada"
+    )
+    
+    # Construir el prompt con las instrucciones del sistema
+    full_prompt = f"{DEVELOPER_INSTRUCTIONS}\n\n---\n\nUSER REQUEST:\n{user_query}"
+    
+    # Paso 3: Generación de código
+    yield trajectory.trajectory_metadata(
+        title="⚙️ Generando código cuántico",
+        content="El agente está analizando la solicitud y generando código QASM/Qiskit..."
+    )
+    
+    # Ejecutar el agente
+    try:
+        run_context = await agent.run(full_prompt)
+        
+        # Actualizar trayectoria con progreso
+        yield trajectory.trajectory_metadata(
+            title="✅ Código generado",
+            content="- [x] Análisis completado\n- [x] Código generado\n- [x] Explicación preparada"
+        )
+        
+        # Extraer la respuesta
+        response = ""
+        if hasattr(run_context, 'output') and run_context.output:
+            output = run_context.output
+            if isinstance(output, list) and output:
+                last_msg = output[-1]
+                if hasattr(last_msg, 'text'):
+                    response = str(last_msg.text)
+                elif hasattr(last_msg, 'content'):
+                    response = str(last_msg.content)
+                else:
+                    response = str(last_msg)
+            else:
+                response = str(output)
+        else:
+            response = str(run_context)
+        
+        # Asegurar que response sea string
+        if not isinstance(response, str):
+            response = str(response)
+        
+        # Paso 4: Respuesta generada
+        yield trajectory.trajectory_metadata(
+            title="✅ Respuesta lista",
+            content=f"Código y explicación generados ({len(response)} caracteres)\n\n**Contenido:**\n- Código QASM/Qiskit\n- Explicación detallada\n- Ejemplos de uso"
+        )
+        
+        print("=" * 80)
+        print(f"✅ [Developer Agent] Response generated ({len(response)} chars)")
+        print("=" * 80)
+        
+        # Crear el mensaje de respuesta
+        response_message = AgentMessage(text=response)
+        
+        # Yield la respuesta al usuario
+        yield response_message
+        
+    except Exception as e:
+        import traceback
+        error_msg = f"❌ Error en Developer Agent: {str(e)}"
+        error_details = f"\n\nTipo de error: {type(e).__name__}\n"
+        error_details += f"Detalles: {str(e)}\n\n"
+        error_details += "Traceback:\n"
+        error_details += traceback.format_exc()
+        
+        # Trayectoria de error
+        yield trajectory.trajectory_metadata(
+            title="❌ Error detectado",
+            content=f"**Tipo:** {type(e).__name__}\n**Mensaje:** {str(e)}\n\nConsulta los logs para más detalles."
+        )
+        
+        print("=" * 80)
+        print(f"🔴 [Developer Agent] {error_msg}")
+        print(error_details)
+        print("=" * 80)
+        
+        yield AgentMessage(text=error_msg + error_details)
+
 def run():
-    """Inicia el servidor A2A del Quantum Developer Agent usando BeeAI Framework"""
+    """Inicia el servidor del Quantum Developer Agent con almacenamiento persistente"""
     port = int(os.getenv("DEVELOPER_PORT", 8001))
     host = os.getenv("DEVELOPER_HOST", "127.0.0.1")
     
-    print("=" * 60)
-    print("🚀 Starting Quantum Developer Agent Server (BeeAI A2A)")
-    print("=" * 60)
+    print("=" * 80)
+    print("🚀 Starting Quantum Developer Agent Server (AgentStack)")
+    print("=" * 80)
     print(f"  👨‍💻 Agent: Quantum Developer Agent")
     print(f"  🤖 Model: {os.getenv('WATSONX_DEVELOPER_MODEL', 'mistral-large-2512')}")
     print(f"  🌐 Host: {host}")
     print(f"  🔌 Port: {port}")
-    print(f"  📚 Skills: Code Generation, Explanations, Optimization")
-    print(f"  🔧 Framework: BeeAI A2A Server")
-    print("=" * 60)
+    print(f"  🛠️  Tools: 0 (Pure LLM - Code Generation)")
+    print(f"  📚 History: Persistent storage enabled (PlatformContextStore)")
+    print(f"  🎯 Trajectory: Visualization enabled")
+    print(f"  📚 Skills: Code Generation, Explanations, Algorithm Implementation")
+    print("=" * 80)
+    print("\n💡 Tip: Este agente es invocado por el Operations Agent (puerto 8000)")
+    print("   para generar código cuántico y explicaciones.")
+    print("=" * 80)
     
-    # Crear el agente
-    agent = create_developer_agent()
-    
-    # Configurar y ejecutar el servidor A2A
-    # Usamos LRU memory manager para mantener un número limitado de sesiones en memoria
-    A2AServer(
-        config=A2AServerConfig(
-            port=port,
-            host=host,
-            protocol="jsonrpc"  # Protocolo JSON-RPC para A2A
-        ),
-        memory_manager=LRUMemoryManager(maxsize=100)
-    ).register(agent, send_trajectory=True).serve()
+    # Ejecutar servidor sin PlatformContextStore (invocado vía A2A)
+    server.run(
+        host=host,
+        port=port
+    )
 
 if __name__ == "__main__":
     run()

@@ -138,10 +138,17 @@ HERRAMIENTAS DISPONIBLES:
    ✅ Después de obtener código del Developer Agent y usuario quiere ejecutarlo
    ✅ Usuario proporciona código QASM para ejecutar
    
+   ⚠️ REGLA CRÍTICA DE EJECUCIÓN:
+   - Ejecuta el código UNA SOLA VEZ por defecto
+   - NO ejecutes múltiples veces a menos que el usuario EXPLÍCITAMENTE lo pida
+   - Si el usuario dice "ejecuta 3 veces", entonces ejecuta 3 veces
+   - Si el usuario solo dice "ejecuta", ejecuta UNA VEZ
+   
    EJEMPLOS DE EJECUCIÓN:
-   - "Ejecuta este código QASM en ibm_brisbane"
-   - "Ejecuta el circuito en el simulador"
-   - "Ejecuta ese código en hardware real"
+   - "Ejecuta este código QASM en ibm_brisbane" → Ejecutar 1 vez
+   - "Ejecuta el circuito en el simulador" → Ejecutar 1 vez
+   - "Ejecuta ese código 5 veces" → Ejecutar 5 veces
+   - "Ejecuta en ibm_torino 3 veces" → Ejecutar 3 veces
 
 FLUJOS DE TRABAJO TÍPICOS:
 
@@ -312,14 +319,31 @@ REGLAS CRÍTICAS PARA EJECUCIÓN:
    
    NO pidas al usuario que repita el código si ya está en la conversación.
 
-⚠️ REGLA CRÍTICA PARA RESPUESTAS DE OTROS AGENTES:
+⚠️⚠️⚠️ REGLA CRÍTICA ABSOLUTA - NUNCA VIOLAR ⚠️⚠️⚠️
 
-Cuando uses quantum_status_client o quantum_developer_client:
-1. **COPIA Y PEGA LA RESPUESTA EXACTA** que te devuelve el agente
-2. **NO MODIFIQUES** la respuesta del agente especializado
-3. **NO AGREGUES** información adicional que no venga del agente
-4. **NO INVENTES** datos o simuladores que no estén en la respuesta
-5. **NO RESUMAS** ni omitas información de la respuesta
+Cuando uses quantum_status_client, quantum_developer_client o quantum_computing_client:
+
+**PROHIBIDO ABSOLUTAMENTE:**
+❌ NUNCA inventes información que no venga del agente
+❌ NUNCA agregues backends que no estén en la respuesta
+❌ NUNCA modifiques tablas o datos del agente
+❌ NUNCA resumas o parafrasees la respuesta del agente
+❌ NUNCA generes tu propia respuesta si el agente ya respondió
+
+**OBLIGATORIO:**
+✅ COPIA EXACTAMENTE la respuesta del agente palabra por palabra
+✅ USA la respuesta del agente como tu Final Answer
+✅ Si el agente dice "3 backends", TÚ dices "3 backends"
+✅ Si el agente muestra una tabla, TÚ muestras ESA MISMA tabla
+✅ NO agregues información adicional
+
+**EJEMPLO CORRECTO:**
+Status Agent responde: "Encontré 3 backends: ibm_kyiv, ibm_sherbrooke, simulator_statevector"
+TU RESPUESTA: "Encontré 3 backends: ibm_kyiv, ibm_sherbrooke, simulator_statevector"
+
+**EJEMPLO INCORRECTO (PROHIBIDO):**
+Status Agent responde: "Encontré 3 backends: ibm_kyiv, ibm_sherbrooke, simulator_statevector"
+TU RESPUESTA: "Aquí están los 7 backends disponibles: ibm_kyiv, ibm_brisbane, ibm_osaka..." ❌❌❌ PROHIBIDO!
 
 ⚠️ REGLA ESPECIAL PARA quantum_computing_client:
 Cuando ejecutes código con quantum_computing_client, la respuesta SIEMPRE debe incluir:
@@ -398,13 +422,80 @@ server = Server()
 
 def create_operations_agent():
     """Crea una instancia del Quantum Operations Agent con Mistral Small"""
+    from beeai_framework.agents.react.runners.default.prompts import SystemPromptTemplateInput
+    from beeai_framework.template import PromptTemplate
+    
     # Configurar Watsonx con Mistral Small
     llm = ChatModel.from_name(
         f"watsonx:{os.getenv('WATSONX_OPERATIONS_MODEL', 'mistralai/mistral-small-3-1-24b-instruct-2503')}"
     )
     
-    # Crear el agente con las herramientas
-    # Usar TokenMemory para limitar el contexto y evitar errores de respuesta vacía
+    # Crear un template de sistema personalizado que FUERCE a copiar respuestas exactas
+    custom_system_template = PromptTemplate(
+        schema=SystemPromptTemplateInput,
+        template="""# YOUR ROLE AND CRITICAL RULES
+""" + OPERATIONS_INSTRUCTIONS + """
+
+# Available functions
+{{#tools.0}}
+You have access to the following A2A client tools to invoke specialized agents:
+
+{{#tools}}
+Function Name: {{name}}
+Description: {{description}}
+Input Schema: {{&input_schema}}
+
+{{/tools}}
+{{/tools.0}}
+
+# Communication structure
+You communicate only in instruction lines. The format is: "Instruction: expected output".
+
+Message: User's message. You never use this instruction line.
+Thought: Your step-by-step plan. This MUST be immediately followed by Function Name (to call a function) or Final Answer.
+Function Name: Name of the function to call. This MUST be immediately followed by Function Input.
+Function Input: Function parameters in JSON format, e.g. {{"arg1":"value1", "arg2":"value2"}}
+Function Output: Output of the function in JSON format.
+Final Answer: Your response to the user. Must always be preceded by Thought.
+
+# ⚠️⚠️⚠️ CRITICAL RULE - NEVER VIOLATE ⚠️⚠️⚠️
+
+When you call quantum_status_client, quantum_developer_client, or quantum_computing_client:
+
+**YOUR FINAL ANSWER MUST BE THE EXACT FUNCTION OUTPUT - WORD FOR WORD**
+
+DO NOT:
+❌ Add information not in the Function Output
+❌ Modify tables or data from the Function Output
+❌ Invent backends, jobs, or data not in the Function Output
+❌ Summarize or paraphrase the Function Output
+
+DO:
+✅ Copy the Function Output EXACTLY as your Final Answer
+✅ Use the EXACT same words, numbers, and format
+✅ If Function Output says "3 backends", you say "3 backends"
+✅ If Function Output shows a table, you show THAT EXACT table
+
+## Example of CORRECT behavior:
+Message: ¿Qué computadoras cuánticas están disponibles?
+Thought: I need to call quantum_status_client to get the list of available quantum computers
+Function Name: quantum_status_client
+Function Input: {{"request": "¿Qué computadoras cuánticas están disponibles?"}}
+Function Output: Encontré 3 backends disponibles: ibm_kyiv, ibm_sherbrooke, simulator_statevector
+
+Thought: I will use the EXACT Function Output as my Final Answer without any modifications
+Final Answer: Encontré 3 backends disponibles: ibm_kyiv, ibm_sherbrooke, simulator_statevector
+
+## Example of INCORRECT behavior (FORBIDDEN):
+Message: ¿Qué computadoras cuánticas están disponibles?
+Function Output: Encontré 3 backends disponibles: ibm_kyiv, ibm_sherbrooke, simulator_statevector
+Final Answer: Aquí están los 7 backends disponibles: ibm_kyiv, ibm_brisbane, ibm_osaka... ❌❌❌ FORBIDDEN!
+
+**REMEMBER: Your Final Answer = Function Output (EXACT COPY)**
+""",
+    )
+    
+    # Crear el agente con el template personalizado
     return ReActAgent(
         llm=llm,
         tools=[
@@ -412,7 +503,8 @@ def create_operations_agent():
             QuantumStatusClient(),
             QuantumComputingClient(),
         ],
-        memory=TokenMemory(max_tokens=6000),  # Limitar contexto a 6K tokens para Mistral Small
+        memory=TokenMemory(max_tokens=6000),
+        templates={"system": custom_system_template},  # Template personalizado
     )
 
 @server.agent(
