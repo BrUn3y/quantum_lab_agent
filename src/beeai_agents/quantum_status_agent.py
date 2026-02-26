@@ -27,6 +27,7 @@ from .tools import (
     IBMQuantumStatusTool,
     IBMQuantumInfoTool,
     IBMQuantumJobTool,
+    IBMQuantumJobComparisonTool,
 )
 
 # Instrucciones SIMPLIFICADAS para el Status Agent (para reducir tamaño de respuestas)
@@ -82,10 +83,10 @@ HERRAMIENTAS DISPONIBLES (DEBES USAR UNA SIEMPRE):
    - Operaciones soportadas
    - Configuración del procesador
 
-3. **ibm_quantum_job** - Consultar trabajos
+3. **ibm_quantum_job** - Consultar trabajos individuales
    
    USAR CUANDO:
-   ✅ Usuario proporciona un Job ID
+   ✅ Usuario proporciona UN SOLO Job ID
    ✅ Usuario pregunta "¿cuál es el estado de mi trabajo?"
    ✅ Usuario pregunta "muéstrame mis trabajos"
    ✅ Usuario pregunta "¿qué trabajos tengo en ejecución?"
@@ -100,6 +101,26 @@ HERRAMIENTAS DISPONIBLES (DEBES USAR UNA SIEMPRE):
    - Resultados de mediciones (si está completado)
    - Distribución de probabilidades
    - Tabla de trabajos recientes (si se lista)
+
+4. **ibm_quantum_job_comparison** - Comparar múltiples trabajos
+   
+   USAR CUANDO:
+   ✅ Usuario dice "compara los resultados de los jobs X, Y, Z"
+   ✅ Usuario dice "compara estos trabajos: [lista de IDs]"
+   ✅ Usuario pregunta "¿cuál es la diferencia entre estos jobs?"
+   ✅ Usuario quiere ver resultados lado a lado de MÚLTIPLES trabajos
+   
+   PARÁMETROS:
+   - job_ids: Lista de 2 a 5 Job IDs (ej: ["d6cd297g4t5c7385dh4g", "d6cd2bknsg9c739a32p0"])
+   
+   SALIDA ESPERADA:
+   - Tabla comparativa con resultados de cada job
+   - Análisis de diferencias entre los trabajos
+   - Identificación de patrones comunes o divergentes
+   - Estados más probables de cada trabajo
+   
+   ⚠️ IMPORTANTE: Esta herramienta extrae los resultados REALES de cada job por separado,
+   evitando el problema de mostrar resultados idénticos para todos los trabajos.
    
    ⚠️ IMPORTANTE PARA INTERPRETACIÓN DE RESULTADOS:
    Cuando muestres resultados de un trabajo completado, DEBES agregar una interpretación inteligente basada en:
@@ -218,6 +239,7 @@ def create_status_agent():
         IBMQuantumStatusTool(),
         IBMQuantumInfoTool(),
         IBMQuantumJobTool(),
+        IBMQuantumJobComparisonTool(),
     ]
     
     # Crear un template de sistema personalizado con las instrucciones AL INICIO
@@ -302,7 +324,7 @@ def run():
     print(f"  🤖 Model: {os.getenv('WATSONX_STATUS_MODEL', 'mistralai/mistral-small-3-1-24b-instruct-2503')}")
     print(f"  🌐 Host: {host}")
     print(f"  🔌 Port: {port}")
-    print(f"  🛠️  Tools: 3 (Status, Info, Job)")
+    print(f"  🛠️  Tools: 4 (Status, Info, Job, Job Comparison)")
     print(f"  📚 Skills: Status Queries, Backend Info, Job Results")
     print(f"  🔧 Framework: BeeAI A2A Server")
     print("=" * 60)

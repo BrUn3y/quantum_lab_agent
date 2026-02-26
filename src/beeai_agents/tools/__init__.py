@@ -10,6 +10,7 @@ HERRAMIENTAS DE CONSULTA:
 - IBMQuantumStatusTool: Lista computadoras cuánticas disponibles
 - IBMQuantumInfoTool: Información detallada de backends
 - IBMQuantumJobTool: Estado y resultados de trabajos
+- IBMQuantumJobComparisonTool: Compara resultados de múltiples trabajos
 
 HERRAMIENTAS DE COMUNICACIÓN A2A:
 - QuantumDeveloperClient: Cliente para invocar al Developer Agent
@@ -21,6 +22,7 @@ from .quantum_tool import IBMQuantumTool
 from .quantum_status_tool import IBMQuantumStatusTool
 from .quantum_info_tool import IBMQuantumInfoTool
 from .quantum_job_tool import IBMQuantumJobTool
+from .quantum_job_comparison_tool import IBMQuantumJobComparisonTool
 from .quantum_developer_client import QuantumDeveloperClient
 from .quantum_status_client import QuantumStatusClient
 from .quantum_computing_client import QuantumComputingClient
@@ -30,6 +32,7 @@ __all__ = [
     "IBMQuantumStatusTool",
     "IBMQuantumInfoTool",
     "IBMQuantumJobTool",
+    "IBMQuantumJobComparisonTool",
     "QuantumDeveloperClient",
     "QuantumStatusClient",
     "QuantumComputingClient",

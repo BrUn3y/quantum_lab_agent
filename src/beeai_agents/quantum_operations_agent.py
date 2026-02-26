@@ -120,12 +120,15 @@ HERRAMIENTAS DISPONIBLES:
    ✅ Usuario proporciona un Job ID para consultar
    ✅ Usuario pregunta "cuál es el estado de mi trabajo"
    ✅ Usuario pregunta "muestra mis trabajos recientes"
+   ✅ Usuario dice "compara los resultados de los jobs X, Y, Z"
+   ✅ Usuario quiere comparar múltiples trabajos
    
    EJEMPLOS DE CONSULTAS:
    - "¿Qué computadoras cuánticas están disponibles?"
    - "Dame información de ibm_brisbane"
    - "¿Cuál es el estado del trabajo d671cklbujdc73cvbp30?"
    - "Muéstrame mis trabajos en ejecución"
+   - "Compara los resultados de los jobs d6cd297g4t5c7385dh4g, d6cd2bknsg9c739a32p0, d6cd2e7g4t5c7385dhag"
 
 3. **quantum_computing_client** - Invocar al Computing Agent (A2A)
    USAR CUANDO:
@@ -438,13 +441,18 @@ async def quantum_operations_agent(
     print(f"⚡ [Operations Agent] Received query: '{user_query[:100]}...'")
     print("=" * 80)
     
-    # Cargar historial de conversación
-    history = [
-        message async for message in context.load_history()
-        if isinstance(message, Message) and message.parts
-    ]
-    
-    print(f"📚 [History] Loaded {len(history)} messages from conversation history")
+    # Cargar historial de conversación con manejo de errores
+    history = []
+    try:
+        history = [
+            message async for message in context.load_history()
+            if isinstance(message, Message) and message.parts
+        ]
+        print(f"📚 [History] Loaded {len(history)} messages from conversation history")
+    except Exception as e:
+        print(f"⚠️ [History] Could not load history (timeout or error): {str(e)}")
+        print(f"📝 [History] Continuing without history context")
+        # Continuar sin historial - no es crítico para la operación
     
     # Paso 1: Análisis de la solicitud
     yield trajectory.trajectory_metadata(
