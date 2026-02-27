@@ -101,6 +101,7 @@ Thumbs.db
 *.bak
 *.tmp
 *.temp
+skills-lock.json
 
 # Temporary visualizations
 temp_visualizations/

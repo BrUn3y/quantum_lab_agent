@@ -6,6 +6,110 @@ from pydantic import BaseModel, Field
 from qiskit_ibm_runtime import QiskitRuntimeService
 from typing import Optional
 import json
+import os
+import tempfile
+import uuid
+
+# Matplotlib con backend no-GUI
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Directorio temporal para PNGs cuánticos (compartido con el Status Agent)
+QUANTUM_PNG_DIR = os.path.join(tempfile.gettempdir(), "quantum_lab_pngs")
+os.makedirs(QUANTUM_PNG_DIR, exist_ok=True)
+
+
+def _save_job_histogram_png(counts: dict, job_id: str) -> Optional[str]:
+    """
+    Genera un histograma PNG de los resultados de un trabajo cuántico
+    y lo guarda en un archivo temporal.
+    Retorna la ruta del archivo PNG o None si falla.
+    """
+    try:
+        if not counts:
+            return None
+
+        # Ordenar estados por conteo descendente (máximo 20 estados)
+        sorted_items = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:20]
+        states = [item[0] for item in sorted_items]
+        values = [item[1] for item in sorted_items]
+        total = sum(counts.values())
+        percentages = [(v / total) * 100 for v in values]
+
+        # Crear figura
+        fig, ax = plt.subplots(figsize=(max(8, len(states) * 0.9), 5))
+        fig.patch.set_facecolor('#0d1117')
+        ax.set_facecolor('#161b22')
+
+        # Colores degradados por probabilidad (azul oscuro a azul claro)
+        cmap = plt.get_cmap('Blues')
+        max_pct = max(percentages) if percentages else 1
+        bar_colors = [cmap(0.4 + 0.6 * (p / max_pct)) for p in percentages]
+
+        bars = ax.bar(
+            range(len(states)),
+            percentages,
+            color=bar_colors,
+            edgecolor='#30363d',
+            linewidth=0.8
+        )
+
+        # Etiquetas de valor en las barras
+        for bar, pct in zip(bars, percentages):
+            if pct > 1:
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + 0.3,
+                    f'{pct:.1f}%',
+                    ha='center', va='bottom',
+                    fontsize=8, color='white', fontweight='bold'
+                )
+
+        # Estilo
+        ax.set_xlabel('Estado Cuántico', color='white', fontsize=11)
+        ax.set_ylabel('Porcentaje (%)', color='white', fontsize=11)
+        short_id = f"...{job_id[-16:]}" if len(job_id) > 16 else job_id
+        ax.set_title(f'📊 Resultados del Job: {short_id}', color='white', fontsize=13, pad=12)
+        ax.set_xticks(range(len(states)))
+        ax.set_xticklabels(states, color='white', fontsize=9, fontfamily='monospace')
+        ax.tick_params(colors='white')
+        ax.spines['bottom'].set_color('#30363d')
+        ax.spines['left'].set_color('#30363d')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.yaxis.grid(True, alpha=0.2, color='#30363d')
+        ax.set_axisbelow(True)
+
+        # Nota de total
+        ax.text(
+            0.99, 0.97,
+            f'Total: {total:,} shots',
+            transform=ax.transAxes,
+            ha='right', va='top',
+            fontsize=9, color='#8b949e'
+        )
+
+        plt.tight_layout()
+
+        # Guardar en archivo temporal
+        png_name = f"job_{job_id[:8]}_{uuid.uuid4().hex[:8]}"
+        png_path = os.path.join(QUANTUM_PNG_DIR, f"{png_name}.png")
+        plt.savefig(png_path, format='png', dpi=120, bbox_inches='tight',
+                    facecolor=fig.get_facecolor())
+        plt.close(fig)
+        print(f"[JobTool] PNG guardado: {png_path}")
+        return png_path
+
+    except Exception as e:
+        print(f"[JobTool] Error generando PNG: {e}")
+        try:
+            plt.close('all')
+        except Exception:
+            pass
+        return None
+
 
 class QuantumJobInput(BaseModel):
     """Input schema for quantum job status and results"""
@@ -135,6 +239,9 @@ EJEMPLOS:
             if status_name in ['COMPLETED', 'DONE']:
                 result_text += "## 🎯 Resultados\n\n"
                 
+                # Variable para guardar counts y generar PNG después
+                final_counts = None
+                
                 try:
                     result = job.result()
                     results_found = False
@@ -163,6 +270,7 @@ EJEMPLOS:
                                     
                                     result_text += f"\n**Total de mediciones:** {total:,}\n\n"
                                     results_found = True
+                                    final_counts = counts
                         except Exception as e:
                             result_text += f"⚠️ Error al procesar BitArray: {str(e)}\n\n"
                     
@@ -202,6 +310,7 @@ EJEMPLOS:
                                     
                                     result_text += f"\n**Total de mediciones:** {total:,}\n\n"
                                     results_found = True
+                                    final_counts = counts
                         except Exception as e:
                             result_text += f"⚠️ Error al procesar resultados: {str(e)}\n\n"
                     
@@ -213,18 +322,21 @@ EJEMPLOS:
                         
                         quasi_dist = result.quasi_dists[0]
                         total_shots = 4096
+                        quasi_counts = {}
                         
                         for state, prob in sorted(quasi_dist.items(), key=lambda x: x[1], reverse=True)[:15]:
                             binary_state = bin(state)[2:].zfill(2)
                             count = int(prob * total_shots)
                             percentage = prob * 100
                             result_text += f"| `{binary_state}` | {percentage:.2f}% | ~{count} |\n"
+                            quasi_counts[binary_state] = count
                         
                         if len(quasi_dist) > 15:
                             result_text += f"\n*Mostrando 15 de {len(quasi_dist)} estados*\n"
                         
                         result_text += "\n"
                         results_found = True
+                        final_counts = quasi_counts
                     
                     # Si aún no se encontraron resultados
                     if not results_found:
@@ -259,6 +371,12 @@ EJEMPLOS:
                     
                     if not results_found:
                         result_text += "💡 **Nota:** Para ver los resultados detallados, es posible que necesites usar la API de Qiskit directamente.\n\n"
+                    
+                    # Generar PNG del histograma si hay resultados
+                    if final_counts:
+                        png_path = _save_job_histogram_png(final_counts, input.job_id)
+                        if png_path:
+                            result_text += f"\n__QUANTUM_PNG__{png_path}__END_PNG__\n"
                     
                 except Exception as e:
                     result_text += f"⚠️ No se pudieron obtener los resultados detallados: {str(e)}\n\n"

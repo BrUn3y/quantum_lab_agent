@@ -13,6 +13,9 @@ Tipo: Servidor AgentStack con A2A (ReActAgent con tools de consulta)
 """
 
 import os
+import re
+import tempfile
+import time
 from typing import Annotated
 from collections.abc import AsyncGenerator
 
@@ -24,6 +27,7 @@ from agentstack_sdk.server.store.platform_context_store import PlatformContextSt
 from agentstack_sdk.a2a.types import AgentMessage
 from agentstack_sdk.a2a.extensions import AgentDetail, AgentDetailTool
 from agentstack_sdk.a2a.extensions import TrajectoryExtensionServer, TrajectoryExtensionSpec
+from agentstack_sdk.platform.file import File
 
 from beeai_framework.agents.react import ReActAgent
 from beeai_framework.agents.react.runners.default.prompts import SystemPromptTemplateInput
@@ -317,6 +321,98 @@ STATUS_AGENT_SKILLS = [
     )
 ]
 
+# Directorio temporal compartido con las herramientas para PNGs cuánticos
+_QUANTUM_PNG_DIR = os.path.join(tempfile.gettempdir(), "quantum_lab_pngs")
+
+# Patrón para detectar marcadores PNG en el output de las herramientas
+# Formato: __QUANTUM_PNG__<ruta_archivo>__END_PNG__
+_PNG_MARKER_PATTERN = re.compile(
+    r'__QUANTUM_PNG__([^\n]+?)__END_PNG__'
+)
+
+
+async def _upload_png_and_replace(text: str) -> str:
+    """
+    Busca marcadores __QUANTUM_PNG__ en el texto, lee el archivo PNG temporal,
+    lo sube a AgentStack usando File.create() y reemplaza el marcador con
+    markdown de imagen usando agentstack:// URL.
+    
+    Si el LLM modificó/truncó el marcador, también busca PNGs recientes
+    en el directorio temporal (creados en los últimos 120 segundos).
+    """
+    result = text
+    uploaded_paths = set()
+    
+    # Estrategia 1: Buscar marcadores explícitos en el texto
+    matches = list(_PNG_MARKER_PATTERN.finditer(text))
+    for match in reversed(matches):  # reversed para no desplazar índices
+        png_path = match.group(1).strip()
+        try:
+            with open(png_path, 'rb') as f:
+                png_bytes = f.read()
+            
+            png_name = os.path.basename(png_path).replace('.png', '')
+            uploaded = await File.create(
+                filename=f"{png_name}.png",
+                content=png_bytes,
+                content_type="image/png",
+            )
+            
+            img_markdown = f"\n![Histograma Cuántico](agentstack://{uploaded.id})\n"
+            result = result[:match.start()] + img_markdown + result[match.end():]
+            uploaded_paths.add(png_path)
+            print(f"[Status Agent] PNG subido (marcador): {png_name}.png → agentstack://{uploaded.id}")
+            
+            try:
+                os.remove(png_path)
+            except Exception:
+                pass
+                
+        except Exception as e:
+            print(f"[Status Agent] Error subiendo PNG '{png_path}': {e}")
+            result = result[:match.start()] + result[match.end():]
+    
+    # Estrategia 2: Buscar PNGs recientes en el directorio temporal
+    # (por si el LLM modificó/truncó el marcador)
+    try:
+        if os.path.exists(_QUANTUM_PNG_DIR):
+            now = time.time()
+            for fname in sorted(os.listdir(_QUANTUM_PNG_DIR)):
+                if not fname.endswith('.png'):
+                    continue
+                fpath = os.path.join(_QUANTUM_PNG_DIR, fname)
+                if fpath in uploaded_paths:
+                    continue
+                # Solo PNGs creados en los últimos 120 segundos
+                if now - os.path.getmtime(fpath) > 120:
+                    continue
+                try:
+                    with open(fpath, 'rb') as f:
+                        png_bytes = f.read()
+                    
+                    png_name = fname.replace('.png', '')
+                    uploaded = await File.create(
+                        filename=fname,
+                        content=png_bytes,
+                        content_type="image/png",
+                    )
+                    
+                    result += f"\n![Histograma Cuántico](agentstack://{uploaded.id})\n"
+                    print(f"[Status Agent] PNG subido (directorio): {fname} → agentstack://{uploaded.id}")
+                    
+                    try:
+                        os.remove(fpath)
+                    except Exception:
+                        pass
+                        
+                except Exception as e:
+                    print(f"[Status Agent] Error subiendo PNG del directorio '{fpath}': {e}")
+    except Exception as e:
+        print(f"[Status Agent] Error escaneando directorio PNG: {e}")
+    
+    return result
+
+
 # Crear servidor AgentStack
 server = Server()
 
@@ -492,6 +588,27 @@ async def quantum_status_agent(
         # Asegurar que response sea string
         if not isinstance(response, str):
             response = str(response)
+        
+        # Procesar marcadores PNG: subir imágenes y reemplazar con agentstack:// URLs
+        # Verifica marcadores explícitos O PNGs recientes en el directorio temporal
+        has_png_marker = '__QUANTUM_PNG__' in response
+        has_recent_pngs = (
+            os.path.exists(_QUANTUM_PNG_DIR) and
+            any(
+                f.endswith('.png') and (time.time() - os.path.getmtime(os.path.join(_QUANTUM_PNG_DIR, f))) < 120
+                for f in os.listdir(_QUANTUM_PNG_DIR)
+            )
+        )
+        if has_png_marker or has_recent_pngs:
+            yield trajectory.trajectory_metadata(
+                title="🖼️ Generando visualizaciones",
+                content="Subiendo histogramas PNG al servidor de archivos..."
+            )
+            try:
+                response = await _upload_png_and_replace(response)
+                print(f"[Status Agent] PNG markers processed successfully")
+            except Exception as png_err:
+                print(f"[Status Agent] Error processing PNG markers: {png_err}")
         
         # Paso 4: Respuesta generada
         yield trajectory.trajectory_metadata(

@@ -3,6 +3,7 @@ Quantum Job Comparison Tool - Compara resultados de múltiples trabajos cuántic
 
 Esta herramienta permite comparar los resultados de 2 o más trabajos cuánticos
 para identificar diferencias en las distribuciones de probabilidad.
+Genera histogramas PNG guardados en archivos temporales para visualización inline.
 """
 
 from beeai_framework.tools import Tool
@@ -12,7 +13,20 @@ from beeai_framework.context import RunContext
 from pydantic import BaseModel, Field
 from qiskit_ibm_runtime import QiskitRuntimeService
 from typing import Optional, List, Dict
-import json
+import io
+import os
+import tempfile
+import uuid
+
+# Matplotlib con backend no-GUI
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Directorio temporal para PNGs cuánticos (compartido con el Status Agent)
+QUANTUM_PNG_DIR = os.path.join(tempfile.gettempdir(), "quantum_lab_pngs")
+os.makedirs(QUANTUM_PNG_DIR, exist_ok=True)
 
 
 class QuantumJobComparisonInput(BaseModel):
@@ -20,6 +34,107 @@ class QuantumJobComparisonInput(BaseModel):
     job_ids: List[str] = Field(
         description="Lista de Job IDs a comparar (mínimo 2, máximo 5). Ejemplo: ['d6cd297g4t5c7385dh4g', 'd6cd2bknsg9c739a32p0']"
     )
+
+
+def _save_comparison_png(jobs_data: List[Dict], name: str) -> Optional[str]:
+    """
+    Genera un histograma comparativo y lo guarda en un archivo temporal.
+    Retorna la ruta del archivo PNG o None si falla.
+    """
+    try:
+        valid_jobs = [j for j in jobs_data if j.get('counts')]
+        if not valid_jobs:
+            return None
+
+        # Obtener todos los estados únicos
+        all_states = set()
+        for job_data in valid_jobs:
+            all_states.update(job_data['counts'].keys())
+        all_states = sorted(all_states)
+
+        n_jobs = len(valid_jobs)
+        n_states = len(all_states)
+
+        # Colores para cada job
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
+
+        # Crear figura
+        fig, ax = plt.subplots(figsize=(max(10, n_states * 1.2), 6))
+        fig.patch.set_facecolor('#0d1117')
+        ax.set_facecolor('#161b22')
+
+        # Posiciones de las barras
+        x = np.arange(n_states)
+        width = 0.8 / n_jobs
+
+        for i, job_data in enumerate(valid_jobs):
+            counts = job_data['counts']
+            total = sum(counts.values())
+            percentages = [(counts.get(state, 0) / total) * 100 for state in all_states]
+
+            offset = (i - n_jobs / 2 + 0.5) * width
+            bars = ax.bar(
+                x + offset,
+                percentages,
+                width,
+                label=f"Job {i+1}: ...{job_data['job_id'][-12:]}",
+                color=colors[i % len(colors)],
+                alpha=0.85,
+                edgecolor='white',
+                linewidth=0.5
+            )
+
+            # Etiquetas de valor en barras altas
+            for bar, pct in zip(bars, percentages):
+                if pct > 3:
+                    ax.text(
+                        bar.get_x() + bar.get_width() / 2,
+                        bar.get_height() + 0.3,
+                        f'{pct:.1f}%',
+                        ha='center', va='bottom',
+                        fontsize=7, color='white', fontweight='bold'
+                    )
+
+        # Estilo del gráfico
+        ax.set_xlabel('Estado Cuántico', color='white', fontsize=12)
+        ax.set_ylabel('Porcentaje (%)', color='white', fontsize=12)
+        ax.set_title('📊 Comparación de Resultados de Trabajos Cuánticos', color='white', fontsize=14, pad=15)
+        ax.set_xticks(x)
+        ax.set_xticklabels(all_states, color='white', fontsize=10, fontfamily='monospace')
+        ax.tick_params(colors='white')
+        ax.spines['bottom'].set_color('#30363d')
+        ax.spines['left'].set_color('#30363d')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.yaxis.grid(True, alpha=0.2, color='#30363d')
+        ax.set_axisbelow(True)
+
+        # Leyenda
+        ax.legend(
+            loc='upper right',
+            facecolor='#21262d',
+            edgecolor='#30363d',
+            labelcolor='white',
+            fontsize=9
+        )
+
+        plt.tight_layout()
+
+        # Guardar en archivo temporal
+        png_path = os.path.join(QUANTUM_PNG_DIR, f"{name}.png")
+        plt.savefig(png_path, format='png', dpi=120, bbox_inches='tight',
+                    facecolor=fig.get_facecolor())
+        plt.close(fig)
+        print(f"[ComparisonTool] PNG guardado: {png_path}")
+        return png_path
+
+    except Exception as e:
+        print(f"[ComparisonTool] Error generando PNG: {e}")
+        try:
+            plt.close('all')
+        except Exception:
+            pass
+        return None
 
 
 class IBMQuantumJobComparisonTool(Tool[QuantumJobComparisonInput]):
@@ -50,6 +165,7 @@ SALIDA:
 - Tabla comparativa con resultados de cada job
 - Análisis de diferencias
 - Identificación de patrones comunes
+- Histograma PNG comparativo
 """
     
     @property
@@ -134,9 +250,10 @@ SALIDA:
             # Inicializar servicio
             service = QiskitRuntimeService(channel="ibm_quantum_platform")
             
-            # Recopilar información de cada job
+            # Recopilar información de cada job por separado
             jobs_data = []
             for job_id in input.job_ids:
+                job_id = job_id.strip()
                 try:
                     job = service.job(job_id)
                     status = job.status()
@@ -153,7 +270,7 @@ SALIDA:
                         })
                         continue
                     
-                    # Extraer conteos
+                    # Extraer conteos de ESTE job específico
                     counts = self._extract_counts_from_job(job)
                     
                     jobs_data.append({
@@ -179,11 +296,10 @@ SALIDA:
             
             # Tabla de información básica
             result_text += "## 📋 Información de Trabajos\n\n"
-            result_text += "| Job ID | Backend | Estado |\n"
-            result_text += "|--------|---------|--------|\n"
+            result_text += "| # | Job ID | Backend | Estado |\n"
+            result_text += "|---|--------|---------|--------|\n"
             
-            for job_data in jobs_data:
-                job_id_short = job_data['job_id'][:20] + "..."
+            for i, job_data in enumerate(jobs_data, 1):
                 status_emoji = {
                     'COMPLETED': '✅',
                     'DONE': '✅',
@@ -192,7 +308,7 @@ SALIDA:
                     'RUNNING': '🔄'
                 }
                 emoji = status_emoji.get(job_data['status'], '❓')
-                result_text += f"| `{job_id_short}` | {job_data['backend']} | {emoji} {job_data['status']} |\n"
+                result_text += f"| {i} | `{job_data['job_id']}` | {job_data['backend']} | {emoji} {job_data['status']} |\n"
             
             result_text += "\n"
             
@@ -201,7 +317,7 @@ SALIDA:
             if jobs_with_errors:
                 result_text += "## ⚠️ Advertencias\n\n"
                 for job_data in jobs_with_errors:
-                    result_text += f"- **{job_data['job_id'][:20]}...**: {job_data['error']}\n"
+                    result_text += f"- **`{job_data['job_id']}`**: {job_data['error']}\n"
                 result_text += "\n"
             
             # Comparar resultados solo de jobs completados con datos
@@ -212,20 +328,11 @@ SALIDA:
                 result_text += "Se necesitan al menos 2 trabajos en estado DONE/COMPLETED con resultados disponibles.\n"
                 return StringToolOutput(result=result_text)
             
-            # Obtener todos los estados únicos
-            all_states = set()
-            for job_data in valid_jobs:
-                all_states.update(job_data['counts'].keys())
+            # Tabla de resultados individuales por job
+            result_text += "## 🎯 Resultados por Trabajo\n\n"
             
-            # Ordenar estados
-            all_states = sorted(all_states)
-            
-            # Tabla comparativa de resultados
-            result_text += "## 🎯 Comparación de Resultados\n\n"
-            
-            # Para cada job, mostrar su tabla individual
             for i, job_data in enumerate(valid_jobs, 1):
-                result_text += f"### Job {i}: {job_data['job_id']}\n\n"
+                result_text += f"### Job {i}: `{job_data['job_id']}`\n\n"
                 result_text += "| Estado Cuántico | Conteo | Porcentaje |\n"
                 result_text += "|-----------------|--------|------------|\n"
                 
@@ -251,7 +358,7 @@ SALIDA:
                     top_state = max(counts.items(), key=lambda x: x[1])
                     total = sum(counts.values())
                     top_states.append({
-                        'job_id': job_data['job_id'][:20],
+                        'job_id': job_data['job_id'],
                         'state': top_state[0],
                         'count': top_state[1],
                         'percentage': (top_state[1] / total) * 100
@@ -259,8 +366,8 @@ SALIDA:
             
             if top_states:
                 result_text += "### Estados más probables por trabajo:\n\n"
-                for ts in top_states:
-                    result_text += f"- **{ts['job_id']}...**: Estado `{ts['state']}` con {ts['percentage']:.2f}% ({ts['count']:,} mediciones)\n"
+                for i, ts in enumerate(top_states, 1):
+                    result_text += f"- **Job {i} (`{ts['job_id']}`)**: Estado `{ts['state']}` con {ts['percentage']:.2f}% ({ts['count']:,} mediciones)\n"
                 result_text += "\n"
                 
                 # Verificar si todos tienen el mismo estado dominante
@@ -272,6 +379,12 @@ SALIDA:
                     result_text += "- Diferentes circuitos cuánticos ejecutados\n"
                     result_text += "- Variabilidad por ruido cuántico\n"
                     result_text += "- Diferentes backends con características distintas\n\n"
+            
+            # Generar PNG comparativo y guardar en archivo temporal
+            png_name = f"comparison_{input.job_ids[0][:8]}_{uuid.uuid4().hex[:8]}"
+            png_path = _save_comparison_png(valid_jobs, png_name)
+            if png_path:
+                result_text += f"\n__QUANTUM_PNG__{png_path}__END_PNG__\n"
             
             # Conclusión
             result_text += "---\n\n"
