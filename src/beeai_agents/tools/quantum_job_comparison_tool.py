@@ -1,9 +1,9 @@
 """
-Quantum Job Comparison Tool - Compara resultados de múltiples trabajos cuánticos
+Quantum Job Comparison Tool - Compares results from multiple quantum jobs
 
-Esta herramienta permite comparar los resultados de 2 o más trabajos cuánticos
-para identificar diferencias en las distribuciones de probabilidad.
-Genera histogramas PNG guardados en archivos temporales para visualización inline.
+This tool allows comparing results from 2 or more quantum jobs
+to identify differences in probability distributions.
+Generates PNG histograms saved in temporary files for inline visualization.
 """
 
 from beeai_framework.tools import Tool
@@ -18,13 +18,13 @@ import os
 import tempfile
 import uuid
 
-# Matplotlib con backend no-GUI
+# Matplotlib with non-GUI backend
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Directorio temporal para PNGs cuánticos (compartido con el Status Agent)
+# Temporary directory for quantum PNGs (shared with Status Agent)
 QUANTUM_PNG_DIR = os.path.join(tempfile.gettempdir(), "quantum_lab_pngs")
 os.makedirs(QUANTUM_PNG_DIR, exist_ok=True)
 
@@ -32,21 +32,21 @@ os.makedirs(QUANTUM_PNG_DIR, exist_ok=True)
 class QuantumJobComparisonInput(BaseModel):
     """Input schema for quantum job comparison"""
     job_ids: List[str] = Field(
-        description="Lista de Job IDs a comparar (mínimo 2, máximo 5). Ejemplo: ['d6cd297g4t5c7385dh4g', 'd6cd2bknsg9c739a32p0']"
+        description="List of Job IDs to compare (minimum 2, maximum 5). Example: ['d6cd297g4t5c7385dh4g', 'd6cd2bknsg9c739a32p0']"
     )
 
 
 def _save_comparison_png(jobs_data: List[Dict], name: str) -> Optional[str]:
     """
-    Genera un histograma comparativo y lo guarda en un archivo temporal.
-    Retorna la ruta del archivo PNG o None si falla.
+    Generates a comparative histogram and saves it to a temporary file.
+    Returns the PNG file path or None if it fails.
     """
     try:
         valid_jobs = [j for j in jobs_data if j.get('counts')]
         if not valid_jobs:
             return None
 
-        # Obtener todos los estados únicos
+        # Get all unique states
         all_states = set()
         for job_data in valid_jobs:
             all_states.update(job_data['counts'].keys())
@@ -55,15 +55,15 @@ def _save_comparison_png(jobs_data: List[Dict], name: str) -> Optional[str]:
         n_jobs = len(valid_jobs)
         n_states = len(all_states)
 
-        # Colores para cada job
+        # Colors for each job
         colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
 
-        # Crear figura
+        # Create figure
         fig, ax = plt.subplots(figsize=(max(10, n_states * 1.2), 6))
         fig.patch.set_facecolor('#0d1117')
         ax.set_facecolor('#161b22')
 
-        # Posiciones de las barras
+        # Bar positions
         x = np.arange(n_states)
         width = 0.8 / n_jobs
 
@@ -84,7 +84,7 @@ def _save_comparison_png(jobs_data: List[Dict], name: str) -> Optional[str]:
                 linewidth=0.5
             )
 
-            # Etiquetas de valor en barras altas
+            # Value labels on tall bars
             for bar, pct in zip(bars, percentages):
                 if pct > 3:
                     ax.text(
@@ -95,10 +95,10 @@ def _save_comparison_png(jobs_data: List[Dict], name: str) -> Optional[str]:
                         fontsize=7, color='white', fontweight='bold'
                     )
 
-        # Estilo del gráfico
-        ax.set_xlabel('Estado Cuántico', color='white', fontsize=12)
-        ax.set_ylabel('Porcentaje (%)', color='white', fontsize=12)
-        ax.set_title('📊 Comparación de Resultados de Trabajos Cuánticos', color='white', fontsize=14, pad=15)
+        # Chart style
+        ax.set_xlabel('Quantum State', color='white', fontsize=12)
+        ax.set_ylabel('Percentage (%)', color='white', fontsize=12)
+        ax.set_title('📊 Quantum Job Results Comparison', color='white', fontsize=14, pad=15)
         ax.set_xticks(x)
         ax.set_xticklabels(all_states, color='white', fontsize=10, fontfamily='monospace')
         ax.tick_params(colors='white')
@@ -109,7 +109,7 @@ def _save_comparison_png(jobs_data: List[Dict], name: str) -> Optional[str]:
         ax.yaxis.grid(True, alpha=0.2, color='#30363d')
         ax.set_axisbelow(True)
 
-        # Leyenda
+        # Legend
         ax.legend(
             loc='upper right',
             facecolor='#21262d',
@@ -120,16 +120,16 @@ def _save_comparison_png(jobs_data: List[Dict], name: str) -> Optional[str]:
 
         plt.tight_layout()
 
-        # Guardar en archivo temporal
+        # Save to temporary file
         png_path = os.path.join(QUANTUM_PNG_DIR, f"{name}.png")
         plt.savefig(png_path, format='png', dpi=120, bbox_inches='tight',
                     facecolor=fig.get_facecolor())
         plt.close(fig)
-        print(f"[ComparisonTool] PNG guardado: {png_path}")
+        print(f"[ComparisonTool] PNG saved: {png_path}")
         return png_path
 
     except Exception as e:
-        print(f"[ComparisonTool] Error generando PNG: {e}")
+        print(f"[ComparisonTool] Error generating PNG: {e}")
         try:
             plt.close('all')
         except Exception:
@@ -147,25 +147,25 @@ class IBMQuantumJobComparisonTool(Tool[QuantumJobComparisonInput]):
     @property
     def description(self) -> str:
         return """
-Compara los resultados de múltiples trabajos cuánticos en IBM Quantum.
+Compares results from multiple quantum jobs on IBM Quantum.
 
-USAR ESTA HERRAMIENTA CUANDO:
-✅ Usuario dice "compara los resultados de los jobs X, Y, Z"
-✅ Usuario dice "compara estos trabajos: [lista de IDs]"
-✅ Usuario pregunta "¿cuál es la diferencia entre estos jobs?"
-✅ Usuario quiere ver resultados lado a lado
+USE THIS TOOL WHEN:
+✅ User says "compare the results of jobs X, Y, Z"
+✅ User says "compare these jobs: [list of IDs]"
+✅ User asks "what is the difference between these jobs?"
+✅ User wants to see results side by side
 
-PARÁMETROS:
-- job_ids: Lista de 2 a 5 Job IDs para comparar
+PARAMETERS:
+- job_ids: List of 2 to 5 Job IDs to compare
 
-EJEMPLO:
+EXAMPLE:
 {"job_ids": ["d6cd297g4t5c7385dh4g", "d6cd2bknsg9c739a32p0", "d6cd2e7g4t5c7385dhag"]}
 
-SALIDA:
-- Tabla comparativa con resultados de cada job
-- Análisis de diferencias
-- Identificación de patrones comunes
-- Histograma PNG comparativo
+OUTPUT:
+- Comparative table with results from each job
+- Difference analysis
+- Identification of common patterns
+- Comparative PNG histogram
 """
     
     @property
@@ -178,13 +178,13 @@ SALIDA:
 
     def _extract_counts_from_job(self, job) -> Optional[Dict[str, int]]:
         """
-        Extrae los conteos de mediciones de un trabajo cuántico.
-        Maneja diferentes formatos de resultados de Qiskit.
+        Extracts measurement counts from a quantum job.
+        Handles different Qiskit result formats.
         """
         try:
             result = job.result()
             
-            # Método 1: SamplerV2 con BitArray - result._pub_results
+            # Method 1: SamplerV2 with BitArray - result._pub_results
             if hasattr(result, '_pub_results') and result._pub_results:
                 try:
                     pub_result = result._pub_results[0]
@@ -195,7 +195,7 @@ SALIDA:
                 except Exception:
                     pass
             
-            # Método 2: Formato antiguo - result.data
+            # Method 2: Old format - result.data
             if hasattr(result, 'data') and result.data:
                 try:
                     pub_result = result.data[0]
@@ -210,7 +210,7 @@ SALIDA:
                 except Exception:
                     pass
             
-            # Método 3: quasi_dists (formato muy antiguo)
+            # Method 3: quasi_dists (very old format)
             if hasattr(result, 'quasi_dists') and result.quasi_dists:
                 quasi_dist = result.quasi_dists[0]
                 total_shots = 4096
@@ -227,30 +227,30 @@ SALIDA:
             return None
 
     async def _run(
-        self, 
-        input: QuantumJobComparisonInput, 
-        options: Optional[ToolRunOptions] = None, 
+        self,
+        input: QuantumJobComparisonInput,
+        options: Optional[ToolRunOptions] = None,
         context: Optional[RunContext] = None
     ) -> StringToolOutput:
         """Compare results from multiple quantum jobs."""
         try:
-            # Validar número de jobs
+            # Validate number of jobs
             if len(input.job_ids) < 2:
                 return StringToolOutput(
-                    result="❌ Se necesitan al menos 2 Job IDs para comparar.\n\n"
-                           "Ejemplo: {\"job_ids\": [\"job1\", \"job2\"]}"
+                    result="❌ At least 2 Job IDs are needed for comparison.\n\n"
+                           "Example: {\"job_ids\": [\"job1\", \"job2\"]}"
                 )
             
             if len(input.job_ids) > 5:
                 return StringToolOutput(
-                    result="❌ Máximo 5 Job IDs permitidos para comparación.\n\n"
-                           "Reduce la lista a 5 trabajos o menos."
+                    result="❌ Maximum 5 Job IDs allowed for comparison.\n\n"
+                           "Reduce the list to 5 jobs or less."
                 )
             
-            # Inicializar servicio
+            # Initialize service
             service = QiskitRuntimeService(channel="ibm_quantum_platform")
             
-            # Recopilar información de cada job por separado
+            # Collect information for each job separately
             jobs_data = []
             for job_id in input.job_ids:
                 job_id = job_id.strip()
@@ -259,18 +259,18 @@ SALIDA:
                     status = job.status()
                     status_name = str(status) if not hasattr(status, 'name') else status.name
                     
-                    # Solo procesar jobs completados
+                    # Only process completed jobs
                     if status_name not in ['COMPLETED', 'DONE']:
                         jobs_data.append({
                             'job_id': job_id,
                             'status': status_name,
                             'backend': job.backend().name if hasattr(job, 'backend') else "N/A",
                             'counts': None,
-                            'error': f"Job no completado (estado: {status_name})"
+                            'error': f"Job not completed (status: {status_name})"
                         })
                         continue
                     
-                    # Extraer conteos de ESTE job específico
+                    # Extract counts from THIS specific job
                     counts = self._extract_counts_from_job(job)
                     
                     jobs_data.append({
@@ -278,7 +278,7 @@ SALIDA:
                         'status': status_name,
                         'backend': job.backend().name if hasattr(job, 'backend') else "N/A",
                         'counts': counts,
-                        'error': None if counts else "No se pudieron extraer resultados"
+                        'error': None if counts else "Could not extract results"
                     })
                     
                 except Exception as e:
@@ -290,13 +290,13 @@ SALIDA:
                         'error': str(e)
                     })
             
-            # Construir reporte de comparación
-            result_text = "# 📊 Comparación de Trabajos Cuánticos\n\n"
-            result_text += f"**Trabajos comparados:** {len(input.job_ids)}\n\n"
+            # Build comparison report
+            result_text = "# 📊 Quantum Job Comparison\n\n"
+            result_text += f"**Jobs compared:** {len(input.job_ids)}\n\n"
             
-            # Tabla de información básica
-            result_text += "## 📋 Información de Trabajos\n\n"
-            result_text += "| # | Job ID | Backend | Estado |\n"
+            # Basic information table
+            result_text += "## 📋 Job Information\n\n"
+            result_text += "| # | Job ID | Backend | Status |\n"
             result_text += "|---|--------|---------|--------|\n"
             
             for i, job_data in enumerate(jobs_data, 1):
@@ -312,45 +312,45 @@ SALIDA:
             
             result_text += "\n"
             
-            # Verificar si hay jobs con errores
+            # Check if there are jobs with errors
             jobs_with_errors = [j for j in jobs_data if j['error']]
             if jobs_with_errors:
-                result_text += "## ⚠️ Advertencias\n\n"
+                result_text += "## ⚠️ Warnings\n\n"
                 for job_data in jobs_with_errors:
                     result_text += f"- **`{job_data['job_id']}`**: {job_data['error']}\n"
                 result_text += "\n"
             
-            # Comparar resultados solo de jobs completados con datos
+            # Compare results only for completed jobs with data
             valid_jobs = [j for j in jobs_data if j['counts'] is not None]
             
             if len(valid_jobs) < 2:
-                result_text += "❌ **No hay suficientes trabajos completados con resultados para comparar.**\n\n"
-                result_text += "Se necesitan al menos 2 trabajos en estado DONE/COMPLETED con resultados disponibles.\n"
+                result_text += "❌ **Not enough completed jobs with results to compare.**\n\n"
+                result_text += "At least 2 jobs in DONE/COMPLETED status with available results are needed.\n"
                 return StringToolOutput(result=result_text)
             
-            # Tabla de resultados individuales por job
-            result_text += "## 🎯 Resultados por Trabajo\n\n"
+            # Table of individual results per job
+            result_text += "## 🎯 Results by Job\n\n"
             
             for i, job_data in enumerate(valid_jobs, 1):
                 result_text += f"### Job {i}: `{job_data['job_id']}`\n\n"
-                result_text += "| Estado Cuántico | Conteo | Porcentaje |\n"
+                result_text += "| Quantum State | Count | Percentage |\n"
                 result_text += "|-----------------|--------|------------|\n"
                 
                 counts = job_data['counts']
                 total = sum(counts.values())
                 
-                # Ordenar por conteo descendente
+                # Sort by count descending
                 for state in sorted(counts.keys(), key=lambda x: counts[x], reverse=True)[:10]:
                     count = counts[state]
                     percentage = (count / total) * 100
                     result_text += f"| `{state}` | {count:,} | {percentage:.2f}% |\n"
                 
-                result_text += f"\n**Total de mediciones:** {total:,}\n\n"
+                result_text += f"\n**Total measurements:** {total:,}\n\n"
             
-            # Análisis de diferencias
-            result_text += "## 🔍 Análisis de Diferencias\n\n"
+            # Difference analysis
+            result_text += "## 🔍 Difference Analysis\n\n"
             
-            # Comparar los estados más probables
+            # Compare the most probable states
             top_states = []
             for job_data in valid_jobs:
                 counts = job_data['counts']
@@ -365,39 +365,39 @@ SALIDA:
                     })
             
             if top_states:
-                result_text += "### Estados más probables por trabajo:\n\n"
+                result_text += "### Most probable states per job:\n\n"
                 for i, ts in enumerate(top_states, 1):
-                    result_text += f"- **Job {i} (`{ts['job_id']}`)**: Estado `{ts['state']}` con {ts['percentage']:.2f}% ({ts['count']:,} mediciones)\n"
+                    result_text += f"- **Job {i} (`{ts['job_id']}`)**: State `{ts['state']}` with {ts['percentage']:.2f}% ({ts['count']:,} measurements)\n"
                 result_text += "\n"
                 
-                # Verificar si todos tienen el mismo estado dominante
+                # Check if all have the same dominant state
                 unique_top_states = set(ts['state'] for ts in top_states)
                 if len(unique_top_states) == 1:
-                    result_text += "✅ **Todos los trabajos tienen el mismo estado dominante**, lo que indica resultados consistentes.\n\n"
+                    result_text += "✅ **All jobs have the same dominant state**, indicating consistent results.\n\n"
                 else:
-                    result_text += "⚠️ **Los trabajos tienen diferentes estados dominantes**, lo que puede indicar:\n"
-                    result_text += "- Diferentes circuitos cuánticos ejecutados\n"
-                    result_text += "- Variabilidad por ruido cuántico\n"
-                    result_text += "- Diferentes backends con características distintas\n\n"
+                    result_text += "⚠️ **The jobs have different dominant states**, which may indicate:\n"
+                    result_text += "- Different quantum circuits executed\n"
+                    result_text += "- Variability due to quantum noise\n"
+                    result_text += "- Different backends with distinct characteristics\n\n"
             
-            # Generar PNG comparativo y guardar en archivo temporal
+            # Generate comparative PNG and save to temporary file
             png_name = f"comparison_{input.job_ids[0][:8]}_{uuid.uuid4().hex[:8]}"
             png_path = _save_comparison_png(valid_jobs, png_name)
             if png_path:
                 result_text += f"\n__QUANTUM_PNG__{png_path}__END_PNG__\n"
             
-            # Conclusión
+            # Conclusion
             result_text += "---\n\n"
-            result_text += "💡 **Tip:** Para análisis más detallado, consulta cada Job ID individualmente.\n"
+            result_text += "💡 **Tip:** For more detailed analysis, consult each Job ID individually.\n"
             
             return StringToolOutput(result=result_text)
             
         except Exception as e:
-            error_text = f"❌ Error al comparar trabajos: {str(e)}\n\n"
-            error_text += "Verifica que:\n"
-            error_text += "- Los Job IDs sean correctos\n"
-            error_text += "- Tu token de IBM Quantum sea válido\n"
-            error_text += "- Tengas acceso a los trabajos solicitados\n"
+            error_text = f"❌ Error comparing jobs: {str(e)}\n\n"
+            error_text += "Verify that:\n"
+            error_text += "- The Job IDs are correct\n"
+            error_text += "- Your IBM Quantum token is valid\n"
+            error_text += "- You have access to the requested jobs\n"
             return StringToolOutput(result=error_text)
 
 # Made with Bob

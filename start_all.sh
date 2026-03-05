@@ -8,7 +8,7 @@ echo "📋 System Architecture:"
 echo "  🔹 Developer Agent (Port 8001) - Code Generation"
 echo "  🔹 Status Agent (Port 8002) - Status Queries"
 echo "  🔹 Computing Agent (Port 8003) - Circuit Execution"
-echo "  🔹 Operations Agent (Port 8000) - Orchestrator"
+echo "  🔹 Lab Agent (Port 8000) - Orchestrator"
 echo ""
 echo "=========================================="
 echo ""
@@ -60,11 +60,11 @@ echo ""
 # Wait for Computing to start
 sleep 3
 
-# Start Operations Agent (port 8000)
-echo "🚀 Starting Operations Agent on port 8000..."
+# Start Lab Agent (port 8000)
+echo "🚀 Starting Lab Agent on port 8000..."
 python -m beeai_agents.quantum_operations_agent &
 OPERATIONS_PID=$!
-echo "   ✅ Operations Agent started (PID: $OPERATIONS_PID)"
+echo "   ✅ Lab Agent started (PID: $OPERATIONS_PID)"
 echo ""
 
 echo "=========================================="
@@ -90,7 +90,7 @@ echo "     - URL: http://127.0.0.1:8003"
 echo "     - Model: Mistral Small"
 echo "     - Role: Circuit Execution"
 echo ""
-echo "  🔹 Operations Agent:"
+echo "  🔹 Lab Agent:"
 echo "     - PID: $OPERATIONS_PID"
 echo "     - URL: http://127.0.0.1:8000"
 echo "     - Model: Mistral Small"
@@ -99,7 +99,7 @@ echo ""
 echo "=========================================="
 echo ""
 echo "💡 Tips:"
-echo "  - Use Operations Agent (port 8000) as main entry point"
+echo "  - Use Lab Agent (port 8000) as main entry point"
 echo "  - Developer, Status, and Computing agents are invoked automatically via A2A"
 echo "  - Press Ctrl+C to stop all agents"
 echo ""

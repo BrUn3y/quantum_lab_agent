@@ -2,39 +2,39 @@
 BeeAI Agents Package - Quantum Lab Agent System
 ================================================
 
-Sistema de agentes especializados en computación cuántica con arquitectura A2A:
+Specialized quantum computing agent system with A2A architecture:
 
-AGENTES:
-- Quantum Operations Agent: Orquestador principal (Puerto 8000)
-- Quantum Developer Agent: Generación de código Qiskit/OpenQASM (Puerto 8001)
-- Quantum Status Agent: Consultas de backends y jobs (Puerto 8002)
-- Quantum Computing Agent: Ejecución de circuitos cuánticos (Puerto 8003)
+AGENTS:
+- Quantum Lab Agent: Main orchestrator (Port 8000)
+- Quantum Developer Agent: Qiskit/OpenQASM code generation (Port 8001)
+- Quantum Status Agent: Backend and job queries (Port 8002)
+- Quantum Computing Agent: Quantum circuit execution (Port 8003)
 
-HERRAMIENTAS (tools/):
-- IBMQuantumTool: Ejecuta circuitos cuánticos en IBM Quantum
-- IBMQuantumStatusTool: Consulta computadoras cuánticas disponibles
-- IBMQuantumInfoTool: Información detallada de backends
-- IBMQuantumJobTool: Estado y resultados de trabajos
-- QuantumDeveloperClient: Cliente A2A para invocar al Developer Agent
-- QuantumStatusClient: Cliente A2A para invocar al Status Agent
-- QuantumComputingClient: Cliente A2A para invocar al Computing Agent
+TOOLS (tools/):
+- IBMQuantumTool: Executes quantum circuits on IBM Quantum
+- IBMQuantumStatusTool: Queries available quantum computers
+- IBMQuantumInfoTool: Detailed backend information
+- IBMQuantumJobTool: Job status and results
+- QuantumDeveloperClient: A2A client to invoke the Developer Agent
+- QuantumStatusClient: A2A client to invoke the Status Agent
+- QuantumComputingClient: A2A client to invoke the Computing Agent
 
 USAGE:
-    Iniciar todos los agentes:
+    Start all agents:
     ```
     ./start_all.sh
     ```
     
-    O iniciar individualmente:
+    Or start individually:
     ```
-    ./start_developer.sh   # Puerto 8001
-    ./start_status.sh      # Puerto 8002
-    ./start_computing.sh   # Puerto 8003
-    ./start_operations.sh  # Puerto 8000 (iniciar al final)
+    ./start_developer.sh   # Port 8001
+    ./start_status.sh      # Port 8002
+    ./start_computing.sh   # Port 8003
+    ./start_operations.sh  # Port 8000 (start at the end)
     ```
 """
 
-# Importar herramientas desde la carpeta tools
+# Import tools from the tools folder
 from .tools import (
     IBMQuantumTool,
     IBMQuantumStatusTool,
@@ -46,15 +46,15 @@ from .tools import (
 )
 
 __all__ = [
-    # Herramientas IBM Quantum
+    # IBM Quantum Tools
     "IBMQuantumTool",
     "IBMQuantumStatusTool",
     "IBMQuantumInfoTool",
     "IBMQuantumJobTool",
-    # Clientes A2A
+    # A2A Clients
     "QuantumDeveloperClient",
     "QuantumStatusClient",
     "QuantumComputingClient",
 ]
 
-__version__ = "2.0.0"  # Arquitectura A2A con 4 agentes especializados
+__version__ = "2.0.0"  # A2A architecture with 4 specialized agents

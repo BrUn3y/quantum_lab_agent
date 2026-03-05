@@ -8,7 +8,7 @@ The system consists of 4 specialized agents communicating via Agent-to-Agent (A2
 
 ```mermaid
 graph TB
-    User[👤 User] -->|Requests| OpsAgent[🎯 Operations Agent<br/>Port 8000<br/>Mistral Small]
+    User[👤 User] -->|Requests| OpsAgent[🎯 Lab Agent<br/>Port 8000<br/>Mistral Small]
     
     OpsAgent -->|Generate Code| DevAgent[💻 Developer Agent<br/>Port 8001<br/>Mistral Large]
     OpsAgent -->|Query Status| StatusAgent[📊 Status Agent<br/>Port 8002<br/>Mistral Small]
@@ -34,7 +34,7 @@ graph TB
 
 | Agent | Port | Model | Role | Tools |
 |-------|------|-------|------|-------|
-| **Operations** | 8000 | Mistral Small | Main orchestrator, coordinates all agents | 3 A2A clients |
+| **Lab** | 8000 | Mistral Small | Main orchestrator, coordinates all agents | 3 A2A clients |
 | **Developer** | 8001 | Mistral Large | Code generation & explanations | None (pure LLM) |
 | **Status** | 8002 | Mistral Small | Query backends & job status | 3 IBM Quantum tools |
 | **Computing** | 8003 | Mistral Small | Execute quantum circuits | 1 IBM Quantum tool |
@@ -44,7 +44,7 @@ graph TB
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant O as Operations Agent
+    participant O as Lab Agent
     participant D as Developer Agent
     participant S as Status Agent
     participant C as Computing Agent
@@ -81,7 +81,7 @@ sequenceDiagram
 
 ```mermaid
 graph LR
-    subgraph "Operations Agent Tools"
+    subgraph "Lab Agent Tools"
         DC[Developer Client<br/>A2A Tool]
         SC[Status Client<br/>A2A Tool]
         CC[Computing Client<br/>A2A Tool]
@@ -190,7 +190,7 @@ curl http://localhost:8003/.well-known/agent-card.json  # Computing
 ### Example 1: Generate and Execute a Circuit
 
 ```bash
-# Send request to Operations Agent (port 8000)
+# Send request to Lab Agent (port 8000)
 curl -X POST http://localhost:8000 \
   -H "Content-Type: application/json" \
   -d '{
@@ -202,7 +202,7 @@ curl -X POST http://localhost:8000 \
 ```
 
 **What happens:**
-1. Operations Agent receives request
+1. Lab Agent receives request
 2. Calls Developer Agent to generate QASM code
 3. Extracts code from Developer's response
 4. Calls Computing Agent to execute on ibm_torino
@@ -222,7 +222,7 @@ curl -X POST http://localhost:8000 \
 ```
 
 **What happens:**
-1. Operations Agent receives request
+1. Lab Agent receives request
 2. Calls Status Agent to query backends
 3. Status Agent uses `ibm_quantum_status` tool
 4. Returns table with all available backends
@@ -241,7 +241,7 @@ curl -X POST http://localhost:8000 \
 ```
 
 **What happens:**
-1. Operations Agent receives request
+1. Lab Agent receives request
 2. Calls Status Agent with job ID
 3. Status Agent uses `ibm_quantum_job` tool
 4. Returns job status and results (if completed)
@@ -271,7 +271,7 @@ curl -X POST http://localhost:8000 \
 ```
 
 **What happens:**
-1. Operations Agent searches for QASM code in conversation history
+1. Lab Agent searches for QASM code in conversation history
 2. Finds the code from previous message
 3. Calls Computing Agent with the code
 4. Returns Job ID
@@ -299,7 +299,7 @@ quantum_lab_agent/
 ├── start_developer.sh     # Start Developer Agent
 ├── start_status.sh        # Start Status Agent
 ├── start_computing.sh     # Start Computing Agent
-├── start_operations.sh    # Start Operations Agent
+├── start_operations.sh    # Start Lab Agent
 ├── .env.example          # Environment template
 └── README.md             # This file
 ```
@@ -331,8 +331,8 @@ pkill -f "quantum_computing_agent"
 ### View Agent Logs
 
 ```bash
-# Operations Agent
-tail -f /tmp/operations_agent.log
+# Lab Agent
+tail -f /tmp/lab_agent.log
 
 # Developer Agent  
 tail -f /tmp/developer_agent.log
@@ -391,9 +391,9 @@ uv sync --reinstall
 
 ### Memory Issues
 
-**Problem:** Operations Agent runs out of memory
+**Problem:** Lab Agent runs out of memory
 
-- The Operations Agent uses `TokenMemory(max_tokens=6000)`
+- The Lab Agent uses `TokenMemory(max_tokens=6000)`
 - Long conversations are automatically truncated
 - Restart the agent to clear memory
 

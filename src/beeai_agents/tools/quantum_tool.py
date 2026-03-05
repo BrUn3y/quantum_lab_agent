@@ -11,11 +11,11 @@ import asyncio
 import time
 
 class QuantumInput(BaseModel):
-    qasm_code: str = Field(description="Código del circuito cuántico. Puede ser OpenQASM 2.0/3.0 O código Qiskit Python. El sistema detecta automáticamente el formato y convierte si es necesario.")
-    use_real_device: bool = Field(default=False, description="Si es True, usa hardware cuántico real (QPU). Si es False, usa simulador.")
-    backend_name: str = Field(default="", description="Nombre específico del backend a usar (opcional). Si está vacío, se selecciona automáticamente.")
-    wait_for_results: bool = Field(default=False, description="Si es True, espera a que el trabajo termine y muestra los resultados. Si es False, solo retorna el Job ID inmediatamente.")
-    max_wait_time: int = Field(default=300, description="Tiempo máximo de espera en segundos (default: 300 = 5 minutos).")
+    qasm_code: str = Field(description="Quantum circuit code. Can be OpenQASM 2.0/3.0 OR Qiskit Python code. The system automatically detects the format and converts if necessary.")
+    use_real_device: bool = Field(default=False, description="If True, uses real quantum hardware (QPU). If False, uses simulator.")
+    backend_name: str = Field(default="", description="Specific backend name to use (optional). If empty, automatically selected.")
+    wait_for_results: bool = Field(default=False, description="If True, waits for the job to finish and shows results. If False, only returns the Job ID immediately.")
+    max_wait_time: int = Field(default=300, description="Maximum wait time in seconds (default: 300 = 5 minutes).")
 
 class IBMQuantumTool(Tool[QuantumInput]):
     """Tool for executing quantum circuits on IBM Quantum infrastructure."""
@@ -26,15 +26,15 @@ class IBMQuantumTool(Tool[QuantumInput]):
     
     @property
     def description(self) -> str:
-        return """Ejecuta circuitos cuánticos en IBM Quantum (Simuladores o QPU).
+        return """Executes quantum circuits on IBM Quantum (Simulators or QPU).
         
-FORMATOS SOPORTADOS:
-1. OpenQASM 2.0/3.0 - Lenguaje de ensamblador cuántico
-2. Qiskit Python - Código Python usando QuantumCircuit
+SUPPORTED FORMATS:
+1. OpenQASM 2.0/3.0 - Quantum assembly language
+2. Qiskit Python - Python code using QuantumCircuit
 
-El sistema detecta automáticamente el formato y convierte Qiskit a QASM si es necesario.
+The system automatically detects the format and converts Qiskit to QASM if necessary.
 
-EJEMPLOS:
+EXAMPLES:
 
 OpenQASM:
 ```qasm
@@ -73,38 +73,38 @@ qc.measure_all()
     ) -> StringToolOutput:
         """Execute quantum circuit on IBM Quantum infrastructure."""
         try:
-            # Inicializa el servicio - usa la instancia guardada
+            # Initialize service - uses saved instance
             service = QiskitRuntimeService(channel="ibm_quantum_platform")
             
-            # Selección de backend
+            # Backend selection
             if input.backend_name:
-                # Usar backend específico
+                # Use specific backend
                 backend = service.backend(input.backend_name)
-                backend_type = "🖥️ Simulador" if "simulator" in input.backend_name.lower() else "⚛️ Hardware Real"
+                backend_type = "🖥️ Simulator" if "simulator" in input.backend_name.lower() else "⚛️ Real Hardware"
             elif input.use_real_device:
-                # Seleccionar hardware real menos ocupado
+                # Select least busy real hardware
                 backend = service.least_busy(simulator=False, operational=True)
-                backend_type = "⚛️ Hardware Real"
+                backend_type = "⚛️ Real Hardware"
             else:
-                # Usar simulador por defecto
+                # Use simulator by default
                 backend = service.backend("ibmq_qasm_simulator")
-                backend_type = "🖥️ Simulador"
+                backend_type = "🖥️ Simulator"
 
-            # Detectar el formato del código y convertir si es necesario
+            # Detect code format and convert if necessary
             code_format = "QASM"
             qasm_code = input.qasm_code
             
-            # Detectar si es código Qiskit Python
+            # Detect if it's Qiskit Python code
             if "QuantumCircuit" in input.qasm_code or "from qiskit" in input.qasm_code:
                 code_format = "Qiskit"
-                result_text = f"🔄 **Detectado código Qiskit Python - Convirtiendo a QASM...**\n\n"
+                result_text = f"🔄 **Detected Qiskit Python code - Converting to QASM...**\n\n"
                 
                 try:
-                    # Ejecutar el código Qiskit para obtener el circuito
+                    # Execute Qiskit code to get the circuit
                     local_vars = {}
                     exec(input.qasm_code, {"QuantumCircuit": QuantumCircuit, "qiskit": __import__("qiskit")}, local_vars)
                     
-                    # Buscar el objeto QuantumCircuit en las variables locales
+                    # Find QuantumCircuit object in local variables
                     qc = None
                     for var_name, var_value in local_vars.items():
                         if isinstance(var_value, QuantumCircuit):
@@ -113,82 +113,82 @@ qc.measure_all()
                     
                     if qc is None:
                         return StringToolOutput(
-                            result="❌ Error: No se encontró un objeto QuantumCircuit en el código Qiskit.\n"
-                                   "Asegúrate de crear un circuito con `qc = QuantumCircuit(...)`"
+                            result="❌ Error: No QuantumCircuit object found in Qiskit code.\n"
+                                   "Make sure to create a circuit with `qc = QuantumCircuit(...)`"
                         )
                     
-                    # Convertir a QASM usando la función dumps
+                    # Convert to QASM using dumps function
                     qasm_code = qasm2_dumps(qc)
                     
-                    result_text += f"✅ Conversión exitosa\n"
+                    result_text += f"✅ Conversion successful\n"
                     result_text += f"   • Qubits: {qc.num_qubits}\n"
-                    result_text += f"   • Puertas: {len(qc.data)}\n"
-                    result_text += f"   • Formato destino: OpenQASM 2.0\n\n"
-                    result_text += f"**Código QASM generado:**\n```qasm\n{qasm_code}\n```\n\n"
+                    result_text += f"   • Gates: {len(qc.data)}\n"
+                    result_text += f"   • Target format: OpenQASM 2.0\n\n"
+                    result_text += f"**Generated QASM code:**\n```qasm\n{qasm_code}\n```\n\n"
                     
                 except Exception as e:
                     return StringToolOutput(
-                        result=f"❌ Error al ejecutar código Qiskit: {str(e)}\n\n"
-                               "Verifica que el código sea válido y use la sintaxis correcta de Qiskit."
+                        result=f"❌ Error executing Qiskit code: {str(e)}\n\n"
+                               "Verify that the code is valid and uses correct Qiskit syntax."
                     )
             else:
                 result_text = ""
-                # Validar que el código QASM sea correcto
+                # Validate that QASM code is correct
                 if "OPENQASM" not in qasm_code and "include" not in qasm_code:
                     return StringToolOutput(
-                        result="❌ Error: El código debe ser OpenQASM válido o código Qiskit Python.\n\n"
-                               "OpenQASM debe incluir 'OPENQASM 2.0' o 'OPENQASM 3.0' y 'include \"qelib1.inc\"'\n"
-                               "Qiskit debe usar 'from qiskit import QuantumCircuit'"
+                        result="❌ Error: Code must be valid OpenQASM or Qiskit Python code.\n\n"
+                               "OpenQASM must include 'OPENQASM 2.0' or 'OPENQASM 3.0' and 'include \"qelib1.inc\"'\n"
+                               "Qiskit must use 'from qiskit import QuantumCircuit'"
                     )
 
-            # Convertir el string QASM a un objeto QuantumCircuit
+            # Convert QASM string to QuantumCircuit object
             qc = QuantumCircuit.from_qasm_str(qasm_code)
             
-            # Verificar que el circuito tenga mediciones
+            # Verify circuit has measurements
             if not any(instr.operation.name == 'measure' for instr in qc.data):
                 return StringToolOutput(
-                    result="⚠️ Advertencia: El circuito no tiene mediciones. Agregando mediciones automáticamente..."
+                    result="⚠️ Warning: Circuit has no measurements. Adding measurements automatically..."
                 )
             
-            # TRANSPILACIÓN: Adaptar el circuito al hardware específico
-            # Esto es CRÍTICO para hardware real
-            result_text = f"🔄 **Transpilando circuito para {backend.name}...**\n\n"
+            # TRANSPILATION: Adapt circuit to specific hardware
+            # This is CRITICAL for real hardware
+            result_text = f"🔄 **Transpiling circuit for {backend.name}...**\n\n"
             
             try:
-                # Transpilar el circuito para el backend específico
-                # optimization_level=3 para mejor optimización
+                # Transpile circuit for specific backend
+                # optimization_level=3 for better optimization
                 transpiled_qc = transpile(
                     qc,
                     backend=backend,
                     optimization_level=3
                 )
                 
-                result_text += f"✅ Transpilación exitosa\n"
-                result_text += f"   • Circuito original: {qc.num_qubits} qubits, {len(qc.data)} puertas\n"
-                result_text += f"   • Circuito transpilado: {transpiled_qc.num_qubits} qubits, {len(transpiled_qc.data)} puertas\n\n"
+                result_text += f"✅ Transpilation successful\n"
+                result_text += f"   • Original circuit: {qc.num_qubits} qubits, {len(qc.data)} gates\n"
+                result_text += f"   • Transpiled circuit: {transpiled_qc.num_qubits} qubits, {len(transpiled_qc.data)} gates\n\n"
                 
             except Exception as transpile_error:
                 return StringToolOutput(
-                    result=f"❌ Error en la transpilación: {str(transpile_error)}\n\n"
-                           f"El circuito no puede adaptarse al backend '{backend.name}'.\n"
-                           f"Intenta con un circuito más simple o usa un simulador."
+                    result=f"❌ Transpilation error: {str(transpile_error)}\n\n"
+                           f"Circuit cannot be adapted to backend '{backend.name}'.\n"
+                           f"Try a simpler circuit or use a simulator."
                 )
             
-            # Ejecución usando Sampler V2 con el circuito transpilado
+            # Execution using Sampler V2 with transpiled circuit
             sampler = SamplerV2(mode=backend)
             job = sampler.run([transpiled_qc])
             
-            # Construir respuesta inicial
-            result_text += f"✅ **Circuito enviado exitosamente**\n\n"
+            # Build initial response
+            result_text += f"✅ **Circuit submitted successfully**\n\n"
             result_text += f"**Backend:** {backend.name}\n"
-            result_text += f"**Tipo:** {backend_type}\n"
+            result_text += f"**Type:** {backend_type}\n"
             result_text += f"**Job ID:** `{job.job_id()}`\n"
-            result_text += f"**Qubits físicos usados:** {transpiled_qc.num_qubits}\n"
-            result_text += f"**Puertas transpiladas:** {len(transpiled_qc.data)}\n\n"
+            result_text += f"**Physical qubits used:** {transpiled_qc.num_qubits}\n"
+            result_text += f"**Transpiled gates:** {len(transpiled_qc.data)}\n\n"
             
-            # Si wait_for_results es True, esperar a que termine
+            # If wait_for_results is True, wait for completion
             if input.wait_for_results:
-                result_text += "⏳ **Esperando resultados...**\n\n"
+                result_text += "⏳ **Waiting for results...**\n\n"
                 
                 start_time = time.time()
                 final_states = ['DONE', 'COMPLETED', 'CANCELLED', 'ERROR']
@@ -197,37 +197,37 @@ qc.measure_all()
                     status = job.status()
                     elapsed = time.time() - start_time
                     
-                    # Verificar timeout
+                    # Check timeout
                     if elapsed > input.max_wait_time:
-                        result_text += f"⏱️ **Timeout:** El trabajo no terminó en {input.max_wait_time} segundos.\n"
-                        result_text += f"**Estado actual:** {status}\n"
+                        result_text += f"⏱️ **Timeout:** Job did not finish in {input.max_wait_time} seconds.\n"
+                        result_text += f"**Current status:** {status}\n"
                         result_text += f"**Job ID:** `{job.job_id()}`\n\n"
-                        result_text += "💡 Usa `ibm_quantum_job` con este Job ID para consultar los resultados más tarde.\n"
+                        result_text += "💡 Use `ibm_quantum_job` with this Job ID to check results later.\n"
                         return StringToolOutput(result=result_text)
                     
-                    # Verificar si terminó
+                    # Check if finished
                     if status in final_states:
                         break
                     
-                    # Mostrar progreso
+                    # Show progress
                     if status == 'QUEUED':
-                        result_text += f"   📊 Estado: En cola (esperando {int(elapsed)}s)\n"
+                        result_text += f"   📊 Status: Queued (waiting {int(elapsed)}s)\n"
                     elif status == 'RUNNING':
-                        result_text += f"   🔄 Estado: Ejecutando (esperando {int(elapsed)}s)\n"
+                        result_text += f"   🔄 Status: Running (waiting {int(elapsed)}s)\n"
                     
-                    # Esperar 5 segundos antes de volver a consultar
+                    # Wait 5 seconds before checking again
                     await asyncio.sleep(5)
                 
-                # Trabajo terminado
-                result_text += f"\n✅ **Trabajo completado en {int(elapsed)} segundos**\n"
-                result_text += f"**Estado final:** {status}\n\n"
+                # Job finished
+                result_text += f"\n✅ **Job completed in {int(elapsed)} seconds**\n"
+                result_text += f"**Final status:** {status}\n\n"
                 
-                # Obtener y mostrar resultados
+                # Get and show results
                 if status in ['DONE', 'COMPLETED']:
                     try:
                         result = job.result()
                         
-                        # Extraer resultados del BitArray
+                        # Extract results from BitArray
                         if hasattr(result, '_pub_results') and result._pub_results:
                             pub_result = result._pub_results[0]
                             
@@ -235,49 +235,49 @@ qc.measure_all()
                                 bit_array = pub_result.data.c
                                 counts = bit_array.get_counts()
                                 
-                                result_text += "## 📊 Resultados de Mediciones\n\n"
-                                result_text += "| Estado Cuántico | Conteo | Porcentaje |\n"
-                                result_text += "|-----------------|--------|------------|\n"
+                                result_text += "## 📊 Measurement Results\n\n"
+                                result_text += "| Quantum State | Count | Percentage |\n"
+                                result_text += "|---------------|-------|------------|\n"
                                 
                                 total = sum(counts.values())
                                 for state, count in sorted(counts.items(), key=lambda x: x[1], reverse=True)[:10]:
                                     percentage = (count / total) * 100
                                     result_text += f"| `{state}` | {count:,} | {percentage:.2f}% |\n"
                                 
-                                result_text += f"\n**Total de mediciones:** {total:,}\n\n"
+                                result_text += f"\n**Total measurements:** {total:,}\n\n"
                                 
-                                # Interpretación para estado de Bell
+                                # Interpretation for Bell state
                                 if '00' in counts and '11' in counts:
-                                    result_text += "💡 **Interpretación:** Este patrón sugiere un estado de Bell (entrelazamiento).\n"
-                                    result_text += f"Los estados `00` y `11` aparecen con frecuencias similares, indicando superposición cuántica.\n\n"
+                                    result_text += "💡 **Interpretation:** This pattern suggests a Bell state (entanglement).\n"
+                                    result_text += f"States `00` and `11` appear with similar frequencies, indicating quantum superposition.\n\n"
                             else:
-                                result_text += "⚠️ Resultados disponibles pero en formato no esperado.\n"
-                                result_text += f"Usa `ibm_quantum_job` con Job ID `{job.job_id()}` para ver detalles.\n\n"
+                                result_text += "⚠️ Results available but in unexpected format.\n"
+                                result_text += f"Use `ibm_quantum_job` with Job ID `{job.job_id()}` to see details.\n\n"
                         else:
-                            result_text += "⚠️ Resultados disponibles pero en formato no esperado.\n"
-                            result_text += f"Usa `ibm_quantum_job` con Job ID `{job.job_id()}` para ver detalles.\n\n"
+                            result_text += "⚠️ Results available but in unexpected format.\n"
+                            result_text += f"Use `ibm_quantum_job` with Job ID `{job.job_id()}` to see details.\n\n"
                             
                     except Exception as e:
-                        result_text += f"⚠️ Error al obtener resultados: {str(e)}\n"
-                        result_text += f"Usa `ibm_quantum_job` con Job ID `{job.job_id()}` para intentar de nuevo.\n\n"
+                        result_text += f"⚠️ Error getting results: {str(e)}\n"
+                        result_text += f"Use `ibm_quantum_job` with Job ID `{job.job_id()}` to try again.\n\n"
                 
                 elif status == 'CANCELLED':
-                    result_text += "❌ El trabajo fue cancelado.\n\n"
+                    result_text += "❌ Job was cancelled.\n\n"
                 elif status == 'ERROR':
-                    result_text += "🔴 El trabajo terminó con error.\n\n"
+                    result_text += "🔴 Job finished with error.\n\n"
             
             else:
-                # No esperar resultados, solo retornar Job ID
+                # Don't wait for results, just return Job ID
                 if input.use_real_device:
-                    result_text += "🎯 **CONFIRMACIÓN:** Este circuito se está ejecutando en HARDWARE CUÁNTICO REAL.\n"
-                    result_text += f"Los resultados estarán disponibles cuando el trabajo termine de ejecutarse en {backend.name}.\n\n"
+                    result_text += "🎯 **CONFIRMATION:** This circuit is running on REAL QUANTUM HARDWARE.\n"
+                    result_text += f"Results will be available when the job finishes executing on {backend.name}.\n\n"
                 else:
-                    result_text += "🖥️ Este circuito se ejecutó en un simulador.\n\n"
+                    result_text += "🖥️ This circuit was executed on a simulator.\n\n"
                 
-                result_text += f"💡 Usa `ibm_quantum_job` con Job ID `{job.job_id()}` para consultar los resultados.\n"
+                result_text += f"💡 Use `ibm_quantum_job` with Job ID `{job.job_id()}` to check results.\n"
             
             return StringToolOutput(result=result_text)
             
         except Exception as e:
-            error_text = f"❌ Error al ejecutar el circuito cuántico: {str(e)}"
+            error_text = f"❌ Error executing quantum circuit: {str(e)}"
             return StringToolOutput(result=error_text)

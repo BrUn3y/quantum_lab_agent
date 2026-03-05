@@ -1,21 +1,21 @@
 """
 Quantum Lab Agent Tools
 
-Este módulo contiene todas las herramientas (tools) utilizadas por los agentes cuánticos:
+This module contains all tools used by the quantum agents:
 
-HERRAMIENTAS DE EJECUCIÓN:
-- IBMQuantumTool: Ejecuta circuitos cuánticos en IBM Quantum
+EXECUTION TOOLS:
+- IBMQuantumTool: Executes quantum circuits on IBM Quantum
 
-HERRAMIENTAS DE CONSULTA:
-- IBMQuantumStatusTool: Lista computadoras cuánticas disponibles
-- IBMQuantumInfoTool: Información detallada de backends
-- IBMQuantumJobTool: Estado y resultados de trabajos
-- IBMQuantumJobComparisonTool: Compara resultados de múltiples trabajos
+QUERY TOOLS:
+- IBMQuantumStatusTool: Lists available quantum computers
+- IBMQuantumInfoTool: Detailed information on backends
+- IBMQuantumJobTool: Status and results of jobs
+- IBMQuantumJobComparisonTool: Compares results from multiple jobs
 
-HERRAMIENTAS DE COMUNICACIÓN A2A:
-- QuantumDeveloperClient: Cliente para invocar al Developer Agent
-- QuantumStatusClient: Cliente para invocar al Status Agent
-- QuantumComputingClient: Cliente para invocar al Computing Agent
+A2A COMMUNICATION TOOLS:
+- QuantumDeveloperClient: Client to invoke the Developer Agent
+- QuantumStatusClient: Client to invoke the Status Agent
+- QuantumComputingClient: Client to invoke the Computing Agent
 """
 
 from .quantum_tool import IBMQuantumTool

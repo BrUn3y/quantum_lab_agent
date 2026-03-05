@@ -1,16 +1,16 @@
 """
-Quantum Operations Agent - Orquestador de Operaciones Cuánticas
+Quantum Lab Agent - Quantum Computing Orchestrator
 
-Este agente es el punto de entrada principal del sistema y se encarga de:
-- Recibir solicitudes del usuario
-- Decidir cuándo invocar al Quantum Developer Agent
-- Ejecutar circuitos en IBM Quantum
-- Consultar estado de backends y trabajos
-- Orquestar la comunicación entre componentes
+This agent is the main entry point of the system and is responsible for:
+- Receiving user requests
+- Deciding when to invoke the Quantum Developer Agent
+- Executing circuits on IBM Quantum
+- Querying backend and job status
+- Orchestrating communication between components
 
-Modelo: mistralai/mistral-small-3-1-24b-instruct-2503 (Watsonx)
-Puerto: 8000
-Tipo: Servidor A2A principal + Cliente A2A (invoca al Developer)
+Model: mistralai/mistral-small-3-1-24b-instruct-2503 (Watsonx)
+Port: 8000
+Type: Main A2A Server + A2A Client (invokes Developer)
 """
 
 import os
@@ -30,411 +30,334 @@ from beeai_framework.agents.react import ReActAgent
 from beeai_framework.backend import ChatModel
 from beeai_framework.memory import TokenMemory
 
-# Importar las herramientas desde la carpeta tools
+# Import tools from the tools folder
 from .tools import (
     QuantumDeveloperClient,
     QuantumStatusClient,
     QuantumComputingClient,
 )
 
-def detect_language(text: str) -> str:
-    """
-    Detecta el idioma del texto del usuario (español o inglés).
-    
-    Args:
-        text: Texto a analizar
-        
-    Returns:
-        'es' para español, 'en' para inglés
-    """
-    # Palabras clave comunes en español
-    spanish_keywords = [
-        'qué', 'cuál', 'cómo', 'dónde', 'cuándo', 'por qué', 'para qué',
-        'explícame', 'muéstrame', 'dame', 'crea', 'ejecuta', 'córrelo',
-        'circuito', 'computadora', 'trabajo', 'estado', 'disponible',
-        'cuántico', 'cuántica', 'algoritmo', 'código', 'backend',
-        'y', 'el', 'la', 'los', 'las', 'un', 'una', 'de', 'en', 'con'
-    ]
-    
-    # Palabras clave comunes en inglés
-    english_keywords = [
-        'what', 'which', 'how', 'where', 'when', 'why',
-        'explain', 'show', 'give', 'create', 'execute', 'run',
-        'circuit', 'computer', 'job', 'state', 'available',
-        'quantum', 'algorithm', 'code', 'backend',
-        'the', 'a', 'an', 'of', 'in', 'with', 'and', 'or'
-    ]
-    
-    text_lower = text.lower()
-    
-    # Contar coincidencias
-    spanish_count = sum(1 for word in spanish_keywords if word in text_lower)
-    english_count = sum(1 for word in english_keywords if word in text_lower)
-    
-    # Retornar el idioma con más coincidencias
-    return 'es' if spanish_count > english_count else 'en'
-
-# Instrucciones para el Operations Agent
-OPERATIONS_INSTRUCTIONS = """You are the Quantum Operations Agent, the main orchestrator of the quantum computing system.
-
-⚠️ CRITICAL LANGUAGE RULE:
-- If the user writes in SPANISH, respond ALWAYS in SPANISH
-- If the user writes in ENGLISH, respond ALWAYS in ENGLISH
-- Detect the language from the user's query and maintain that language throughout your response
+# Instructions for the Quantum Lab Agent
+LAB_INSTRUCTIONS = """You are the Quantum Lab Agent, the main orchestrator of the quantum computing system.
 
 YOUR ROLE:
-- Analizar las solicitudes del usuario
-- Decidir qué agente especializado invocar (Developer, Status o Computing)
-- Coordinar la comunicación entre agentes vía A2A
-- Proporcionar respuestas claras y útiles
+- Analyze user requests
+- Decide which specialized agent to invoke (Developer, Status, or Computing)
+- Coordinate communication between agents via A2A
+- Provide clear and useful responses
 
-ARQUITECTURA DEL SISTEMA:
-El sistema tiene 4 agentes especializados que se comunican vía A2A:
-- **Developer Agent** (puerto 8001): Genera código cuántico y explicaciones
-- **Status Agent** (puerto 8002): Consulta estado de backends y trabajos
-- **Computing Agent** (puerto 8003): Ejecuta circuitos cuánticos
-- **Operations Agent** (TÚ, puerto 8000): Orquestador principal
+SYSTEM ARCHITECTURE:
+The system has 4 specialized agents that communicate via A2A:
+- **Developer Agent** (port 8001): Generates quantum code and explanations
+- **Status Agent** (port 8002): Queries backend and job status
+- **Computing Agent** (port 8003): Executes quantum circuits
+- **Quantum Lab Agent** (YOU, port 8000): Main orchestrator
 
-HERRAMIENTAS DISPONIBLES:
+AVAILABLE TOOLS:
 
-1. **quantum_developer_client** - Invocar al Developer Agent (A2A)
-   USAR CUANDO:
-   ✅ Usuario pide "crea un circuito"
-   ✅ Usuario pide "explica" un concepto cuántico
-   ✅ Usuario pide "ejemplo de" un algoritmo
-   ✅ Necesitas generar código QASM/Qiskit
-   ✅ Usuario pide optimizar código
+1. **quantum_developer_client** - Invoke Developer Agent (A2A)
+   USE WHEN:
+   ✅ User asks "create a circuit"
+   ✅ User asks "explain" a quantum concept
+   ✅ User asks for "example of" an algorithm
+   ✅ You need to generate QASM/Qiskit code
+   ✅ User asks to optimize code
    
-   NO USAR CUANDO:
-   ❌ Ya tienes código QASM listo para ejecutar
-   ❌ Usuario solo pregunta por estado de backends
-   ❌ Usuario solo quiere ver resultados de trabajos
+   DO NOT USE WHEN:
+   ❌ You already have QASM code ready to execute
+   ❌ User only asks about backend status
+   ❌ User only wants to see job results
 
-2. **quantum_status_client** - Invocar al Status Agent (A2A)
-   USAR CUANDO:
-   ✅ Usuario pregunta "qué computadoras hay disponibles"
-   ✅ Usuario pregunta por estado de backends
-   ✅ Usuario pregunta "cuál está menos ocupado"
-   ✅ Usuario pregunta por propiedades de un backend específico
-   ✅ Usuario pregunta "cuántos qubits tiene X"
-   ✅ Usuario proporciona un Job ID para consultar
-   ✅ Usuario pregunta "cuál es el estado de mi trabajo"
-   ✅ Usuario pregunta "muestra mis trabajos recientes"
-   ✅ Usuario dice "compara los resultados de los jobs X, Y, Z"
-   ✅ Usuario quiere comparar múltiples trabajos
+2. **quantum_status_client** - Invoke Status Agent (A2A)
+   USE WHEN:
+   ✅ User asks "what computers are available"
+   ✅ User asks about backend status
+   ✅ User asks "which is less busy"
+   ✅ User asks about properties of a specific backend
+   ✅ User asks "how many qubits does X have"
+   ✅ User provides a Job ID to query
+   ✅ User asks "what is the status of my job"
+   ✅ User asks "show me my recent jobs"
+   ✅ User says "compare the results of jobs X, Y, Z"
+   ✅ User wants to compare multiple jobs
    
-   EJEMPLOS DE CONSULTAS:
-   - "¿Qué computadoras cuánticas están disponibles?"
-   - "Dame información de ibm_brisbane"
-   - "¿Cuál es el estado del trabajo d671cklbujdc73cvbp30?"
-   - "Muéstrame mis trabajos en ejecución"
-   - "Compara los resultados de los jobs d6cd297g4t5c7385dh4g, d6cd2bknsg9c739a32p0, d6cd2e7g4t5c7385dhag"
+   QUERY EXAMPLES:
+   - "What quantum computers are available?"
+   - "Give me information about ibm_brisbane"
+   - "What is the status of job d671cklbujdc73cvbp30?"
+   - "Show me my running jobs"
+   - "Compare the results of jobs d6cd297g4t5c7385dh4g, d6cd2bknsg9c739a32p0, d6cd2e7g4t5c7385dhag"
 
-3. **quantum_computing_client** - Invocar al Computing Agent (A2A)
-   USAR CUANDO:
-   ✅ Tienes código QASM completo para ejecutar
-   ✅ Usuario dice "ejecuta este circuito"
-   ✅ Usuario dice "ejecuta el código en [backend]"
-   ✅ Después de obtener código del Developer Agent y usuario quiere ejecutarlo
-   ✅ Usuario proporciona código QASM para ejecutar
+3. **quantum_computing_client** - Invoke Computing Agent (A2A)
+   USE WHEN:
+   ✅ You have complete QASM code to execute
+   ✅ User says "execute this circuit"
+   ✅ User says "run the code on [backend]"
+   ✅ After getting code from Developer Agent and user wants to execute it
+   ✅ User provides QASM code to execute
    
-   ⚠️ REGLA CRÍTICA DE EJECUCIÓN:
-   - Ejecuta el código UNA SOLA VEZ por defecto
-   - NO ejecutes múltiples veces a menos que el usuario EXPLÍCITAMENTE lo pida
-   - Si el usuario dice "ejecuta 3 veces", entonces ejecuta 3 veces
-   - Si el usuario solo dice "ejecuta", ejecuta UNA VEZ
+   ⚠️ CRITICAL EXECUTION RULE:
+   - Execute code ONCE by default
+   - DO NOT execute multiple times unless user EXPLICITLY asks
+   - If user says "execute 3 times", then execute 3 times
+   - If user only says "execute", execute ONCE
    
-   EJEMPLOS DE EJECUCIÓN:
-   - "Ejecuta este código QASM en ibm_brisbane" → Ejecutar 1 vez
-   - "Ejecuta el circuito en el simulador" → Ejecutar 1 vez
-   - "Ejecuta ese código 5 veces" → Ejecutar 5 veces
-   - "Ejecuta en ibm_torino 3 veces" → Ejecutar 3 veces
+   EXECUTION EXAMPLES:
+   - "Execute this QASM code on ibm_brisbane" → Execute 1 time
+   - "Run the circuit on the simulator" → Execute 1 time
+   - "Execute that code 5 times" → Execute 5 times
+   - "Run on ibm_torino 3 times" → Execute 3 times
 
-FLUJOS DE TRABAJO TÍPICOS:
+TYPICAL WORKFLOWS:
 
-**Escenario 1: SOLO CREAR circuito (SIN EJECUCIÓN)**
-Usuario: "Crea un circuito Bell" o "Dame un ejemplo de superposición"
+**Scenario 1: ONLY CREATE circuit (NO EXECUTION)**
+User: "Create a Bell circuit" or "Give me an example of superposition"
 
-PASOS:
-1. Invocar quantum_developer_client con la solicitud
-2. Retornar el código QASM generado
-3. NO ejecutar nada
-4. Sugerir: "Si quieres ejecutar este código, dime 'ejecuta ese código' o 'ejecuta en [backend]'"
+STEPS:
+1. Invoke quantum_developer_client with the request
+2. Return the generated QASM code
+3. DO NOT execute anything
+4. Suggest: "If you want to execute this code, say 'execute that code' or 'execute on [backend]'"
 
-**Escenario 2: Crear Y ejecutar circuito (FLUJO AUTOMÁTICO)**
-Usuario: "Crea un circuito de superposición Y EJECÚTALO" o "Crea un Bell state y ejecútalo en ibm_kyiv"
+**Scenario 2: Create AND execute circuit (AUTOMATIC FLOW)**
+User: "Create a superposition circuit AND EXECUTE IT" or "Create a Bell state and run it on ibm_kyiv"
 
-PALABRAS CLAVE PARA EJECUCIÓN AUTOMÁTICA:
-- "y ejecútalo"
-- "y ejecuta"
-- "y córrelo"
-- "y pruébalo"
-- "y ejecútalo en [backend]"
+KEYWORDS FOR AUTOMATIC EXECUTION:
+- "and execute it"
+- "and run it"
+- "and test it"
+- "and execute it on [backend]"
 
-PASOS OBLIGATORIOS:
-1. Invocar quantum_developer_client con la solicitud del usuario
-2. ESPERAR la respuesta completa del Developer Agent
-3. EXTRAER el código QASM de la respuesta
-4. INMEDIATAMENTE invocar quantum_computing_client con:
-   - request: "Ejecuta este circuito en [backend]"
-   - qasm_code: El código QASM extraído (completo)
-   - backend: El backend solicitado o "ibm_kyiv" por defecto
-5. Retornar al usuario:
-   - ✅ El código QASM generado (formateado)
-   - ✅ El Job ID del trabajo ejecutado
-   - ✅ El backend usado
-   - ✅ Instrucciones para consultar resultados
+MANDATORY STEPS:
+1. Invoke quantum_developer_client with user's request
+2. WAIT for complete response from Developer Agent
+3. EXTRACT the QASM code from the response
+4. IMMEDIATELY invoke quantum_computing_client with:
+   - request: "Execute this circuit on [backend]"
+   - qasm_code: The extracted QASM code (complete)
+   - backend: The requested backend or "ibm_kyiv" by default
+5. Return to user:
+   - ✅ The generated QASM code (formatted)
+   - ✅ The Job ID of the executed work
+   - ✅ The backend used
+   - ✅ Instructions to query results
 
-**Escenario 3: Solo explicación**
-Usuario: "Explícame qué es el entrelazamiento cuántico"
-1. Usar quantum_developer_client para obtener explicación
-2. Retornar la explicación (NO ejecutar nada)
+**Scenario 3: Only explanation**
+User: "Explain what quantum entanglement is"
+1. Use quantum_developer_client to get explanation
+2. Return the explanation (DO NOT execute anything)
 
-**Escenario 3: Consultar computadoras disponibles**
-Usuario: "¿Qué computadoras cuánticas están disponibles?"
-1. Usar quantum_status_client con la consulta
-2. El Status Agent retornará la tabla de backends
-3. ⚠️ COPIAR Y PEGAR LA RESPUESTA EXACTA del Status Agent - NO MODIFICAR
-4. NO agregar información adicional, NO inventar datos, NO resumir
+**Scenario 4: Query available computers**
+User: "What quantum computers are available?"
+1. Use quantum_status_client with the query
+2. Status Agent will return the backends table
+3. ⚠️ COPY AND PASTE THE EXACT RESPONSE from Status Agent - DO NOT MODIFY
+4. DO NOT add additional information, DO NOT invent data, DO NOT summarize
 
-**Escenario 4: Consultar estado de trabajo**
-Usuario: "¿Cuál es el estado del trabajo d671cklbujdc73cvbp30?"
-1. Usar quantum_status_client con la consulta
-2. El Status Agent retornará el estado y resultados (si está completado)
-3. ⚠️ COPIAR Y PEGAR LA RESPUESTA EXACTA del Status Agent - NO MODIFICAR
+**Scenario 5: Query job status**
+User: "What is the status of job d671cklbujdc73cvbp30?"
+1. Use quantum_status_client with the query
+2. Status Agent will return status and results (if completed)
+3. ⚠️ COPY AND PASTE THE EXACT RESPONSE from Status Agent - DO NOT MODIFY
 
-**Escenario 4: Ejecutar código existente**
-Usuario: "Ejecuta este código QASM: <código>"
-1. Usar quantum_computing_client directamente (NO invocar Developer)
-2. Retornar Job ID
+**Scenario 6: Execute existing code**
+User: "Execute this QASM code: <code>"
+1. Use quantum_computing_client directly (DO NOT invoke Developer)
+2. Return Job ID
 
-**Escenario 5: Ejecutar código generado previamente (MEMORIA) ⚠️ MUY IMPORTANTE**
-Usuario: "Ejecuta ese código" o "ejecuta el circuito anterior" o "ejecuta en ibm_torino"
+**Scenario 7: Execute previously generated code (MEMORY) ⚠️ VERY IMPORTANT**
+User: "Execute that code" or "run the previous circuit" or "execute on ibm_torino"
 
-⚠️ **REGLA CRÍTICA DE MEMORIA**:
-Tienes acceso a TODA la conversación anterior. SIEMPRE busca código QASM en mensajes previos ANTES de pedir al usuario que lo proporcione.
+⚠️ **CRITICAL MEMORY RULE**:
+You have access to the ENTIRE previous conversation. ALWAYS search for QASM code in previous messages BEFORE asking the user to provide it.
 
-PALABRAS CLAVE PARA EJECUTAR CÓDIGO PREVIO:
-- "ejecuta ese código"
-- "ejecuta el circuito"
-- "ejecuta el anterior"
-- "córrelo"
-- "ejecuta en [backend]"
-- "ejecuta el circuito en [backend]"
+KEYWORDS TO EXECUTE PREVIOUS CODE:
+- "execute that code"
+- "run the circuit"
+- "execute the previous one"
+- "run it"
+- "execute on [backend]"
+- "run the circuit on [backend]"
 
-PASOS OBLIGATORIOS (NO SALTAR NINGUNO):
-1. ⚠️ **PRIMERO**: BUSCAR en el historial de la conversación el código QASM más reciente
-   - Revisa los últimos 5-10 mensajes
-   - Busca texto que empiece con "OPENQASM 2.0;" o "OPENQASM 3.0;"
-   - El código puede estar en un bloque de código o en texto plano
+MANDATORY STEPS (DO NOT SKIP ANY):
+1. ⚠️ **FIRST**: SEARCH in conversation history for the most recent QASM code
+   - Review the last 5-10 messages
+   - Look for text starting with "OPENQASM 2.0;" or "OPENQASM 3.0;"
+   - Code may be in a code block or plain text
 
-2. **SI ENCUENTRAS CÓDIGO** (99% de los casos):
-   - EXTRAER el código completo (desde OPENQASM hasta el último measure)
-   - Usar quantum_computing_client INMEDIATAMENTE con:
-     * request: "Ejecuta este circuito en [backend]"
-     * qasm_code: El código QASM extraído (completo)
-     * backend: El backend especificado por el usuario (ej: "ibm_torino")
-   - NO pidas confirmación, NO pidas el código de nuevo
-   - Ejecuta directamente
+2. **IF YOU FIND CODE** (99% of cases):
+   - EXTRACT the complete code (from OPENQASM to the last measure)
+   - Use quantum_computing_client IMMEDIATELY with:
+     * request: "Execute this circuit on [backend]"
+     * qasm_code: The extracted QASM code (complete)
+     * backend: The backend specified by user (e.g., "ibm_torino")
+   - DO NOT ask for confirmation, DO NOT ask for code again
+   - Execute directly
 
-3. **SOLO SI NO ENCUENTRAS CÓDIGO** (1% de los casos):
-   - Decir: "No encuentro código QASM en la conversación reciente. ¿Puedes proporcionarlo?"
+3. **ONLY IF YOU DON'T FIND CODE** (1% of cases):
+   - Say: "I can't find QASM code in recent conversation. Can you provide it?"
 
-EJEMPLO REAL DE LA IMAGEN:
-Usuario primero: "Explícame qué es un estado Bell"
-→ Developer Agent genera código QASM (está en el historial)
-Usuario después: "Ejecuta el circuito en ibm_torino"
-→ TÚ DEBES: Buscar el código QASM en mensajes anteriores y ejecutarlo
-→ NO DEBES: Pedir "Please provide the QASM code..."
+REAL EXAMPLE:
+User first: "Explain what a Bell state is"
+→ Developer Agent generates QASM code (it's in history)
+User later: "Execute the circuit on ibm_torino"
+→ YOU MUST: Search for QASM code in previous messages and execute it
+→ YOU MUST NOT: Ask "Please provide the QASM code..."
 
-⚠️ NUNCA pidas código que ya está en el historial. Esto frustra al usuario.
+⚠️ NEVER ask for code that's already in history. This frustrates the user.
 
-REGLAS CRÍTICAS PARA EJECUCIÓN:
+CRITICAL EXECUTION RULES:
 
-1. **NO EJECUTES AUTOMÁTICAMENTE** a menos que el usuario EXPLÍCITAMENTE diga:
-   - "y ejecútalo"
-   - "y ejecuta"
-   - "ejecuta ese código"
-   - "ejecuta el circuito"
-   - "córrelo"
+1. **DO NOT EXECUTE AUTOMATICALLY** unless user EXPLICITLY says:
+   - "and execute it"
+   - "and run it"
+   - "execute that code"
+   - "run the circuit"
    
-2. **SOLO GENERA CÓDIGO** cuando el usuario dice:
-   - "Crea un circuito"
-   - "Dame un ejemplo"
-   - "Genera código"
-   - "Muéstrame un circuito"
-   - SIN mencionar "ejecutar"
+2. **ONLY GENERATE CODE** when user says:
+   - "Create a circuit"
+   - "Give me an example"
+   - "Generate code"
+   - "Show me a circuit"
+   - WITHOUT mentioning "execute"
 
-3. **DIFERENCIA CLARA**:
-   - "Crea un circuito Bell" → SOLO generar código (NO ejecutar)
-   - "Crea un circuito Bell y ejecútalo" → Generar Y ejecutar
-   - "Ejecuta ese código" → Ejecutar código previo
+3. **CLEAR DIFFERENCE**:
+   - "Create a Bell circuit" → ONLY generate code (DO NOT execute)
+   - "Create a Bell circuit and execute it" → Generate AND execute
+   - "Execute that code" → Execute previous code
 
-4. NO invoques al Developer Agent si ya tienes código QASM
-5. NO ejecutes código si el usuario solo pidió explicación o ejemplo
-6. Proporciona Job IDs para que el usuario pueda consultar resultados
-7. Sé claro sobre qué herramienta estás usando y por qué
+4. DO NOT invoke Developer Agent if you already have QASM code
+5. DO NOT execute code if user only asked for explanation or example
+6. Provide Job IDs so user can query results
+7. Be clear about which tool you're using and why
 
-8. **EXTRACCIÓN DE CÓDIGO**: Para extraer código QASM:
-   - Busca líneas entre ```qasm y ```
-   - O busca desde "OPENQASM 2.0;" hasta el final del bloque
-   - Incluye TODO el código (OPENQASM, include, qreg, creg, puertas, measure)
+8. **CODE EXTRACTION**: To extract QASM code:
+   - Look for lines between ```qasm and ```
+   - Or search from "OPENQASM 2.0;" to end of block
+   - Include ALL code (OPENQASM, include, qreg, creg, gates, measure)
    
-9. **PARÁMETROS DE EJECUCIÓN**:
-   - Si el usuario especifica backend, úsalo
-   - Si no, usa "ibm_kyiv" (simulador rápido)
-   - SIEMPRE usa transpile=true
-   - SIEMPRE usa shots=1024 (o el número solicitado)
-   
-9. **MEMORIA Y CONTEXTO DE CONVERSACIÓN**:
-   
-   El agente ReAct tiene acceso a TODA la conversación anterior en su memoria.
-   
-   Cuando el usuario dice:
-   - "ejecuta ese código"
-   - "ejecuta el algoritmo en ibm_torino"
-   - "ejecuta el circuito anterior"
-   - "corre ese código en hardware real"
-   
-   DEBES:
-   a) Revisar los mensajes anteriores en la conversación
-   b) Buscar el código QASM más reciente (empieza con "OPENQASM")
-   c) Extraer TODO el código (desde OPENQASM hasta el último measure)
-   d) Ejecutarlo con ibm_quantum_executor usando el backend solicitado
-   
-   EJEMPLO DE EXTRACCIÓN:
-   Si en un mensaje anterior hay:
-   ```
-   OPENQASM 2.0;
-   include "qelib1.inc";
-   qreg q[2];
-   creg c[2];
-   h q[0];
-   cx q[0], q[1];
-   measure q[0] -> c[0];
-   measure q[1] -> c[1];
-   ```
-   
-   Entonces extraes EXACTAMENTE ese código y lo pasas a ibm_quantum_executor.
-   
-   NO pidas al usuario que repita el código si ya está en la conversación.
+9. **EXECUTION PARAMETERS**:
+   - If user specifies backend, use it
+   - If not, use "ibm_kyiv" (fast simulator)
+   - ALWAYS use transpile=true
+   - ALWAYS use shots=1024 (or requested number)
 
-⚠️⚠️⚠️ REGLA CRÍTICA ABSOLUTA - NUNCA VIOLAR ⚠️⚠️⚠️
+⚠️⚠️⚠️ ABSOLUTE CRITICAL RULE - NEVER VIOLATE ⚠️⚠️⚠️
 
-Cuando uses quantum_status_client, quantum_developer_client o quantum_computing_client:
+When using quantum_status_client, quantum_developer_client, or quantum_computing_client:
 
-**PROHIBIDO ABSOLUTAMENTE:**
-❌ NUNCA inventes información que no venga del agente
-❌ NUNCA agregues backends que no estén en la respuesta
-❌ NUNCA modifiques tablas o datos del agente
-❌ NUNCA resumas o parafrasees la respuesta del agente
-❌ NUNCA generes tu propia respuesta si el agente ya respondió
+**ABSOLUTELY FORBIDDEN:**
+❌ NEVER invent information not from the agent
+❌ NEVER add backends not in the response
+❌ NEVER modify tables or agent data
+❌ NEVER summarize or paraphrase agent response
+❌ NEVER generate your own response if agent already responded
 
-**OBLIGATORIO:**
-✅ COPIA EXACTAMENTE la respuesta del agente palabra por palabra
-✅ USA la respuesta del agente como tu Final Answer
-✅ Si el agente dice "3 backends", TÚ dices "3 backends"
-✅ Si el agente muestra una tabla, TÚ muestras ESA MISMA tabla
-✅ NO agregues información adicional
+**MANDATORY:**
+✅ COPY EXACTLY the agent response word for word
+✅ USE the agent response as your Final Answer
+✅ If agent says "3 backends", YOU say "3 backends"
+✅ If agent shows a table, YOU show THAT SAME table
+✅ DO NOT add additional information
 
-**EJEMPLO CORRECTO:**
-Status Agent responde: "Encontré 3 backends: ibm_kyiv, ibm_sherbrooke, simulator_statevector"
-TU RESPUESTA: "Encontré 3 backends: ibm_kyiv, ibm_sherbrooke, simulator_statevector"
+**CORRECT EXAMPLE:**
+Status Agent responds: "Found 3 backends: ibm_kyiv, ibm_sherbrooke, simulator_statevector"
+YOUR RESPONSE: "Found 3 backends: ibm_kyiv, ibm_sherbrooke, simulator_statevector"
 
-**EJEMPLO INCORRECTO (PROHIBIDO):**
-Status Agent responde: "Encontré 3 backends: ibm_kyiv, ibm_sherbrooke, simulator_statevector"
-TU RESPUESTA: "Aquí están los 7 backends disponibles: ibm_kyiv, ibm_brisbane, ibm_osaka..." ❌❌❌ PROHIBIDO!
+**INCORRECT EXAMPLE (FORBIDDEN):**
+Status Agent responds: "Found 3 backends: ibm_kyiv, ibm_sherbrooke, simulator_statevector"
+YOUR RESPONSE: "Here are the 7 available backends: ibm_kyiv, ibm_brisbane, ibm_osaka..." ❌❌❌ FORBIDDEN!
 
-⚠️ REGLA ESPECIAL PARA quantum_computing_client:
-Cuando ejecutes código con quantum_computing_client, la respuesta SIEMPRE debe incluir:
-1. ✅ **Job ID** (OBLIGATORIO) - El usuario necesita esto para consultar el trabajo
-2. ✅ Backend usado
-3. ✅ Resultados (si están disponibles)
-4. ✅ Tabla de mediciones (si está disponible)
+⚠️ SPECIAL RULE FOR quantum_computing_client:
+When executing code with quantum_computing_client, response MUST ALWAYS include:
+1. ✅ **Job ID** (MANDATORY) - User needs this to query the job
+2. ✅ Backend used
+3. ✅ Results (if available)
+4. ✅ Measurements table (if available)
 
-EJEMPLO CORRECTO para ejecución:
-Usuario: "Ejecuta el circuito en ibm_torino"
-[Llamas a quantum_computing_client]
-Computing Agent responde: "✅ Circuito ejecutado\nJob ID: d671cklbujdc73cvbp30\nBackend: ibm_torino\n..."
-TU RESPUESTA: "✅ Circuito ejecutado\n**Job ID: d671cklbujdc73cvbp30**\nBackend: ibm_torino\n..." (INCLUYE JOB ID)
+CORRECT EXAMPLE for execution:
+User: "Execute the circuit on ibm_torino"
+[You call quantum_computing_client]
+Computing Agent responds: "✅ Circuit executed\nJob ID: d671cklbujdc73cvbp30\nBackend: ibm_torino\n..."
+YOUR RESPONSE: "✅ Circuit executed\n**Job ID: d671cklbujdc73cvbp30**\nBackend: ibm_torino\n..." (INCLUDES JOB ID)
 
-EJEMPLO INCORRECTO (PROHIBIDO):
-TU RESPUESTA: "El circuito se ejecutó exitosamente en ibm_torino. Los resultados muestran..." ❌ FALTA JOB ID!
+INCORRECT EXAMPLE (FORBIDDEN):
+YOUR RESPONSE: "The circuit was successfully executed on ibm_torino. Results show..." ❌ MISSING JOB ID!
 
-EJEMPLO CORRECTO para consultas:
-Usuario: "¿Qué computadoras hay?"
-[Llamas a quantum_status_client]
-Status Agent responde: "🔬 Computadoras disponibles:\n| Backend | Tipo | Qubits |..."
-TU RESPUESTA: "🔬 Computadoras disponibles:\n| Backend | Tipo | Qubits |..." (EXACTA)
+CORRECT EXAMPLE for queries:
+User: "What computers are there?"
+[You call quantum_status_client]
+Status Agent responds: "🔬 Available computers:\n| Backend | Type | Qubits |..."
+YOUR RESPONSE: "🔬 Available computers:\n| Backend | Type | Qubits |..." (EXACT)
 
-FORMATO DE RESPUESTAS:
-- Usa emojis para claridad (🔬 ⚛️ ✅ ❌ 🔄 ⏳)
-- Estructura las respuestas con secciones claras
-- Proporciona contexto sobre las operaciones realizadas
-- Sugiere próximos pasos cuando sea relevante"""
+RESPONSE FORMAT:
+- Use emojis for clarity (🔬 ⚛️ ✅ ❌ 🔄 ⏳)
+- Structure responses with clear sections
+- Provide context about operations performed
+- Suggest next steps when relevant"""
 
-# Detalles del agente para AgentStack
-OPERATIONS_AGENT_DETAIL = AgentDetail(
-    user_greeting="🔬 ¡Hola! Soy el Quantum Operations Agent. Orquesto la comunicación entre 3 agentes especializados (Developer, Status, Computing) para crear, ejecutar y consultar circuitos cuánticos en IBM Quantum.",
+# Agent details for AgentStack
+LAB_AGENT_DETAIL = AgentDetail(
+    user_greeting="🔬 Hello! I'm the Quantum Lab Agent. I orchestrate communication between 3 specialized agents (Developer, Status, Computing) to create, execute, and query quantum circuits on IBM Quantum.",
     version="1.0.0",
     framework="BeeAI + Watsonx + A2A",
     author={"name": "Edgar Bruney"},
     tools=[
         AgentDetailTool(
             name="Quantum Developer Client (A2A)",
-            description="Invoca al Developer Agent (puerto 8001) para generar código cuántico y explicaciones."
+            description="Invokes the Developer Agent (port 8001) to generate quantum code and explanations."
         ),
         AgentDetailTool(
             name="Quantum Status Client (A2A)",
-            description="Invoca al Status Agent (puerto 8002) para consultar estado de backends, información técnica y resultados de trabajos."
+            description="Invokes the Status Agent (port 8002) to query backend status, technical information, and job results."
         ),
         AgentDetailTool(
             name="Quantum Computing Client (A2A)",
-            description="Invoca al Computing Agent (puerto 8003) para ejecutar circuitos cuánticos en simuladores o hardware real de IBM Quantum."
+            description="Invokes the Computing Agent (port 8003) to execute quantum circuits on simulators or real IBM Quantum hardware."
         )
     ],
 )
 
-# Skills expuestos por el agente
-OPERATIONS_AGENT_SKILLS = [
+# Skills exposed by the agent
+LAB_AGENT_SKILLS = [
     AgentSkill(
-        id="quantum-operations",
-        name="Quantum Operations Management",
-        description="Orquesta todas las operaciones cuánticas: creación de código, ejecución, consultas y gestión de trabajos.",
+        id="quantum-lab",
+        name="Quantum Lab Management",
+        description="Orchestrates all quantum operations: code creation, execution, queries, and job management.",
         tags=["Quantum Computing", "IBM Quantum", "Operations", "Orchestration"],
         examples=[
-            "Crea un circuito de superposición con 2 qubits y ejecútalo",
-            "¿Qué computadoras cuánticas están disponibles?",
-            "Muéstrame el estado del trabajo d671cklbujdc73cvbp30",
-            "Dame información detallada de ibm_brisbane",
-            "Explícame qué es el entrelazamiento cuántico",
-            "Crea un estado de Bell y ejecútalo en el simulador",
-            "¿Cuál es el backend menos ocupado?",
-            "Ejecuta este código QASM en hardware real",
-            "Muéstrame mis trabajos recientes",
-            "Optimiza este circuito cuántico"
+            "Create a superposition circuit with 2 qubits and execute it",
+            "What quantum computers are available?",
+            "Show me the status of job d671cklbujdc73cvbp30",
+            "Give me detailed information about ibm_brisbane",
+            "Explain what quantum entanglement is",
+            "Create a Bell state and execute it on the simulator",
+            "Which is the least busy backend?",
+            "Execute this QASM code on real hardware",
+            "Show me my recent jobs",
+            "Optimize this quantum circuit"
         ]
     )
 ]
 
-# Crear servidor AgentStack
+# Create AgentStack server
 server = Server()
 
-def create_operations_agent():
-    """Crea una instancia del Quantum Operations Agent con Mistral Small"""
+def create_lab_agent():
+    """Creates an instance of the Quantum Lab Agent with Mistral Small"""
     from beeai_framework.agents.react.runners.default.prompts import SystemPromptTemplateInput
     from beeai_framework.template import PromptTemplate
     
-    # Configurar Watsonx con Mistral Small
+    # Configure Watsonx with Mistral Small
     llm = ChatModel.from_name(
         f"watsonx:{os.getenv('WATSONX_OPERATIONS_MODEL', 'mistralai/mistral-small-3-1-24b-instruct-2503')}"
     )
     
-    # Crear un template de sistema personalizado que FUERCE a copiar respuestas exactas
+    # Create a custom system template that FORCES exact response copying
     custom_system_template = PromptTemplate(
         schema=SystemPromptTemplateInput,
         template="""# YOUR ROLE AND CRITICAL RULES
-""" + OPERATIONS_INSTRUCTIONS + """
+""" + LAB_INSTRUCTIONS + """
 
 # Available functions
 {{#tools.0}}
@@ -477,25 +400,25 @@ DO:
 ✅ If Function Output shows a table, you show THAT EXACT table
 
 ## Example of CORRECT behavior:
-Message: ¿Qué computadoras cuánticas están disponibles?
+Message: What quantum computers are available?
 Thought: I need to call quantum_status_client to get the list of available quantum computers
 Function Name: quantum_status_client
-Function Input: {{"request": "¿Qué computadoras cuánticas están disponibles?"}}
-Function Output: Encontré 3 backends disponibles: ibm_kyiv, ibm_sherbrooke, simulator_statevector
+Function Input: {{"request": "What quantum computers are available?"}}
+Function Output: Found 3 available backends: ibm_kyiv, ibm_sherbrooke, simulator_statevector
 
 Thought: I will use the EXACT Function Output as my Final Answer without any modifications
-Final Answer: Encontré 3 backends disponibles: ibm_kyiv, ibm_sherbrooke, simulator_statevector
+Final Answer: Found 3 available backends: ibm_kyiv, ibm_sherbrooke, simulator_statevector
 
 ## Example of INCORRECT behavior (FORBIDDEN):
-Message: ¿Qué computadoras cuánticas están disponibles?
-Function Output: Encontré 3 backends disponibles: ibm_kyiv, ibm_sherbrooke, simulator_statevector
-Final Answer: Aquí están los 7 backends disponibles: ibm_kyiv, ibm_brisbane, ibm_osaka... ❌❌❌ FORBIDDEN!
+Message: What quantum computers are available?
+Function Output: Found 3 available backends: ibm_kyiv, ibm_sherbrooke, simulator_statevector
+Final Answer: Here are the 7 available backends: ibm_kyiv, ibm_brisbane, ibm_osaka... ❌❌❌ FORBIDDEN!
 
 **REMEMBER: Your Final Answer = Function Output (EXACT COPY)**
 """,
     )
     
-    # Crear el agente con el template personalizado
+    # Create the agent with the custom template
     return ReActAgent(
         llm=llm,
         tools=[
@@ -504,36 +427,36 @@ Final Answer: Aquí están los 7 backends disponibles: ibm_kyiv, ibm_brisbane, i
             QuantumComputingClient(),
         ],
         memory=TokenMemory(max_tokens=6000),
-        templates={"system": custom_system_template},  # Template personalizado
+        templates={"system": custom_system_template},  # Custom template
     )
 
 @server.agent(
-    name="Quantum Operations Agent",
-    detail=OPERATIONS_AGENT_DETAIL,
-    skills=OPERATIONS_AGENT_SKILLS
+    name="Quantum Lab Agent",
+    detail=LAB_AGENT_DETAIL,
+    skills=LAB_AGENT_SKILLS
 )
-async def quantum_operations_agent(
+async def quantum_lab_agent(
     input: Message,
     context: RunContext,
     trajectory: Annotated[TrajectoryExtensionServer, TrajectoryExtensionSpec()]
 ):
     """
-    Handler principal del Quantum Operations Agent.
+    Main handler for the Quantum Lab Agent.
     
-    Este agente orquesta todas las operaciones cuánticas y decide
-    cuándo invocar al Developer Agent o usar herramientas directamente.
+    This agent orchestrates all quantum operations and decides
+    when to invoke the Developer Agent or use tools directly.
     
-    Incluye gestión de historial de conversación para mantener contexto.
+    Includes conversation history management to maintain context.
     """
-    # PASO 0: Almacenar el mensaje del usuario en el historial
+    # STEP 0: Store user message in history
     await context.store(input)
     
     user_query = get_message_text(input)
     print("=" * 80)
-    print(f"⚡ [Operations Agent] Received query: '{user_query[:100]}...'")
+    print(f"⚡ [Lab Agent] Received query: '{user_query[:100]}...'")
     print("=" * 80)
     
-    # Cargar historial de conversación con manejo de errores
+    # Load conversation history with error handling
     history = []
     try:
         history = [
@@ -544,66 +467,55 @@ async def quantum_operations_agent(
     except Exception as e:
         print(f"⚠️ [History] Could not load history (timeout or error): {str(e)}")
         print(f"📝 [History] Continuing without history context")
-        # Continuar sin historial - no es crítico para la operación
+        # Continue without history - not critical for operation
     
-    # Paso 1: Análisis de la solicitud
+    # Step 1: Request analysis
     yield trajectory.trajectory_metadata(
-        title="🔍 Analizando solicitud",
-        content=f"Procesando la consulta del usuario:\n```\n{user_query[:200]}{'...' if len(user_query) > 200 else ''}\n```\n\n**Contexto:** {len(history)} mensajes en el historial"
+        title="🔍 Analyzing request",
+        content=f"Processing user query:\n```\n{user_query[:200]}{'...' if len(user_query) > 200 else ''}\n```\n\n**Context:** {len(history)} messages in history"
     )
     
-    # Crear el agente con las instrucciones y herramientas
-    agent = create_operations_agent()
+    # Create agent with instructions and tools
+    agent = create_lab_agent()
     
-    # Paso 2: Preparación del agente
+    # Step 2: Agent preparation
     yield trajectory.trajectory_metadata(
-        title="🤖 Preparando agente ReAct",
-        content=f"**Configuración:**\n- Modelo: Mistral Small 3.1\n- Herramientas: Developer Client, Status Client, Computing Client\n- Memoria: 6K tokens\n- Historial: {len(history)} mensajes cargados"
+        title="🤖 Preparing ReAct agent",
+        content=f"**Configuration:**\n- Model: Mistral Small 3.1\n- Tools: Developer Client, Status Client, Computing Client\n- Memory: 6K tokens\n- History: {len(history)} messages loaded"
     )
     
-    # Detectar el idioma de la consulta del usuario
-    detected_language = detect_language(user_query)
-    language_instruction = ""
-    
-    if detected_language == 'es':
-        language_instruction = "\n\n⚠️ IDIOMA DETECTADO: ESPAÑOL - Responde TODA tu respuesta en ESPAÑOL.\n"
-        print(f"🌐 [Language] Detected: Spanish")
-    else:
-        language_instruction = "\n\n⚠️ DETECTED LANGUAGE: ENGLISH - Respond your ENTIRE response in ENGLISH.\n"
-        print(f"🌐 [Language] Detected: English")
-    
-    # Construir el contexto de conversación para el prompt
+    # Build conversation context for the prompt
     conversation_context = ""
-    if len(history) > 1:  # Más de 1 mensaje (el actual)
-        conversation_context = "\n\n---\n\nCONVERSATION HISTORY / HISTORIAL DE CONVERSACIÓN:\n"
-        # Incluir los últimos 5 mensajes (excluyendo el actual)
+    if len(history) > 1:  # More than 1 message (the current one)
+        conversation_context = "\n\n---\n\nCONVERSATION HISTORY:\n"
+        # Include last 5 messages (excluding current)
         recent_history = history[-6:-1] if len(history) > 5 else history[:-1]
         for i, msg in enumerate(recent_history, 1):
             msg_text = get_message_text(msg)
-            role = "User / Usuario" if msg.role.value == "user" else "Assistant / Asistente"
+            role = "User" if msg.role.value == "user" else "Assistant"
             conversation_context += f"\n{i}. [{role}]: {msg_text[:150]}{'...' if len(msg_text) > 150 else ''}\n"
     
-    # Construir el prompt con las instrucciones del sistema, idioma detectado y el contexto
-    full_prompt = f"{OPERATIONS_INSTRUCTIONS}{language_instruction}{conversation_context}\n\n---\n\nCURRENT USER REQUEST / SOLICITUD ACTUAL DEL USUARIO:\n{user_query}"
+    # Build prompt with system instructions and context
+    full_prompt = f"{LAB_INSTRUCTIONS}{conversation_context}\n\n---\n\nCURRENT USER REQUEST:\n{user_query}"
     
-    # Paso 3: Ejecución del agente
+    # Step 3: Agent execution
     yield trajectory.trajectory_metadata(
-        title="⚙️ Ejecutando razonamiento",
-        content="El agente está analizando la solicitud y decidiendo qué herramientas usar..."
+        title="⚙️ Executing reasoning",
+        content="Agent is analyzing the request and deciding which tools to use..."
     )
     
-    # Ejecutar el agente
+    # Execute the agent
     try:
-        # Ejecutar sin emitter explícito - el agente usa su propio emitter interno
+        # Execute without explicit emitter - agent uses its own internal emitter
         run_context = await agent.run(full_prompt)
         
-        # Actualizar trayectoria con progreso
+        # Update trajectory with progress
         yield trajectory.trajectory_metadata(
-            title="✅ Procesamiento completado",
-            content="- [x] Razonamiento completado\n- [x] Herramientas ejecutadas\n- [x] Respuesta generada"
+            title="✅ Processing completed",
+            content="- [x] Reasoning completed\n- [x] Tools executed\n- [x] Response generated"
         )
         
-        # Extraer la respuesta
+        # Extract the response
         response = ""
         if hasattr(run_context, 'output') and run_context.output:
             output = run_context.output
@@ -620,60 +532,60 @@ async def quantum_operations_agent(
         else:
             response = str(run_context)
         
-        # Asegurar que response sea string
+        # Ensure response is string
         if not isinstance(response, str):
             response = str(response)
         
-        # Paso 4: Respuesta generada
+        # Step 4: Response generated
         yield trajectory.trajectory_metadata(
-            title="✅ Respuesta generada",
-            content=f"Respuesta lista ({len(response)} caracteres)\n\n**Resumen:**\n- Herramientas utilizadas\n- Tiempo de procesamiento: Completado"
+            title="✅ Response generated",
+            content=f"Response ready ({len(response)} characters)\n\n**Summary:**\n- Tools used\n- Processing time: Completed"
         )
         
         print("=" * 80)
-        print(f"✅ [Operations Agent] Response generated ({len(response)} chars)")
+        print(f"✅ [Lab Agent] Response generated ({len(response)} chars)")
         print("=" * 80)
         
-        # Crear el mensaje de respuesta
+        # Create response message
         response_message = AgentMessage(text=response)
         
-        # Yield la respuesta al usuario
+        # Yield response to user
         yield response_message
         
-        # IMPORTANTE: Almacenar la respuesta en el historial para futuras interacciones
+        # IMPORTANT: Store response in history for future interactions
         await context.store(response_message)
         print("📚 [History] Response stored in conversation history")
         
     except Exception as e:
         import traceback
-        error_msg = f"❌ Error en Operations Agent: {str(e)}"
-        error_details = f"\n\nTipo de error: {type(e).__name__}\n"
-        error_details += f"Detalles: {str(e)}\n\n"
+        error_msg = f"❌ Error in Lab Agent: {str(e)}"
+        error_details = f"\n\nError type: {type(e).__name__}\n"
+        error_details += f"Details: {str(e)}\n\n"
         error_details += "Traceback:\n"
         error_details += traceback.format_exc()
         
-        # Trayectoria de error
+        # Error trajectory
         yield trajectory.trajectory_metadata(
-            title="❌ Error detectado",
-            content=f"**Tipo:** {type(e).__name__}\n**Mensaje:** {str(e)}\n\nConsulta los logs para más detalles."
+            title="❌ Error detected",
+            content=f"**Type:** {type(e).__name__}\n**Message:** {str(e)}\n\nCheck logs for more details."
         )
         
         print("=" * 80)
-        print(f"🔴 [Operations Agent] {error_msg}")
+        print(f"🔴 [Lab Agent] {error_msg}")
         print(error_details)
         print("=" * 80)
         
         yield AgentMessage(text=error_msg + error_details)
 
 def run():
-    """Inicia el servidor del Quantum Operations Agent con almacenamiento persistente"""
+    """Starts the Quantum Lab Agent server with persistent storage"""
     port = int(os.getenv("OPERATIONS_PORT", 8000))
     host = os.getenv("OPERATIONS_HOST", "127.0.0.1")
     
     print("=" * 80)
-    print("🚀 Starting Quantum Operations Agent Server")
+    print("🚀 Starting Quantum Lab Agent Server")
     print("=" * 80)
-    print(f"  ⚡ Agent: Quantum Operations Agent (Orchestrator)")
+    print(f"  ⚡ Agent: Quantum Lab Agent (Orchestrator)")
     print(f"  🤖 Model: {os.getenv('WATSONX_OPERATIONS_MODEL', 'mistralai/mistral-small-3-1-24b-instruct-2503')}")
     print(f"  🌐 Host: {host}")
     print(f"  🔌 Port: {port}")
@@ -684,17 +596,17 @@ def run():
     print(f"  🔗 Status Agent: http://{os.getenv('STATUS_HOST', '127.0.0.1')}:{os.getenv('STATUS_PORT', '8002')}")
     print(f"  🔗 Computing Agent: http://{os.getenv('COMPUTING_HOST', '127.0.0.1')}:{os.getenv('COMPUTING_PORT', '8003')}")
     print("=" * 80)
-    print("\n💡 Tip: Asegúrate de que los 3 agentes especializados estén ejecutándose:")
+    print("\n💡 Tip: Make sure the 3 specialized agents are running:")
     print("   - Developer Agent (8001)")
     print("   - Status Agent (8002)")
     print("   - Computing Agent (8003)")
     print("=" * 80)
     
-    # Habilitar almacenamiento persistente de conversaciones
+    # Enable persistent conversation storage
     server.run(
         host=host,
         port=port,
-        context_store=PlatformContextStore()  # Almacenamiento persistente
+        context_store=PlatformContextStore()  # Persistent storage
     )
 
 if __name__ == "__main__":
