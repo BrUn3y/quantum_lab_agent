@@ -1,10 +1,12 @@
 # 🔬 Quantum Lab Agent System
 
-A multi-agent system for quantum computing operations using IBM Quantum, built with BeeAI Framework and Watsonx AI.
+A multi-agent system for quantum computing operations using IBM Quantum, built with BeeAI Framework and configurable Watsonx or Ollama models.
 
 ## 🏗️ Architecture
 
 The system consists of 4 specialized agents communicating via Agent-to-Agent (A2A) protocol:
+
+![Quantum Lab Agent architecture diagram](docs/images/architecture.png)
 
 ```mermaid
 graph TB
@@ -120,6 +122,7 @@ graph LR
 - Python 3.11+
 - IBM Quantum account ([Get one here](https://quantum.cloud.ibm.com/))
 - IBM Watsonx account with API key
+- Ollama (optional, for local models such as `qwen3-coder:30b`)
 - `uv` package manager (recommended) or `pip`
 
 ## 🚀 Quick Start
@@ -155,12 +158,22 @@ WATSONX_API_KEY=your_watsonx_api_key_here
 WATSONX_PROJECT_ID=your_project_id_here
 WATSONX_API_URL=https://us-south.ml.cloud.ibm.com.....
 
-# Models (default values shown)
-WATSONX_DEVELOPER_MODEL=mistral-large-2512
-WATSONX_LAB_MODEL=mistralai/mistral-small-3-1-24b-instruct-2503
-WATSONX_STATUS_MODEL=mistralai/mistral-small-3-1-24b-instruct-2503
-WATSONX_COMPUTING_MODEL=mistralai/mistral-small-3-1-24b-instruct-2503
+# Models use BeeAI provider:model identifiers
+OLLAMA_API_BASE=http://127.0.0.1:11434
+DEVELOPER_MODEL=ollama:qwen3-coder:30b
+LAB_MODEL=ollama:qwen3-coder:30b
+STATUS_MODEL=ollama:qwen3-coder:30b
+COMPUTING_MODEL=ollama:qwen3-coder:30b
 ```
+
+For local inference, start Ollama and download the model before launching the agents:
+
+```bash
+ollama pull qwen3-coder:30b
+```
+
+The legacy `WATSONX_DEVELOPER_MODEL`, `WATSONX_LAB_MODEL`, `WATSONX_STATUS_MODEL`, and
+`WATSONX_COMPUTING_MODEL` variables remain supported when their provider-agnostic counterparts are not set.
 
 ### 3. Start All Agents
 
