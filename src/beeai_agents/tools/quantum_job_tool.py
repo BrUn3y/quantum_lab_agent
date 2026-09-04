@@ -435,7 +435,8 @@ EXAMPLES:
             }
             
             for job in jobs:
-                status = str(job.status())
+                raw_status = job.status()
+                status = str(raw_status) if not hasattr(raw_status, 'name') else raw_status.name
                 if filter_status == "all":
                     filtered_jobs.append(job)
                 elif filter_status.lower() in status_map:

@@ -40,7 +40,7 @@ COMPUTING_INSTRUCTIONS = """You are the Quantum Computing Agent. You execute qua
 STEPS:
 1. Extract QASM code from user request
 2. Identify backend (if specified, otherwise use ibm_kyiv)
-3. Execute with ibm_quantum_executor
+3. Execute with ibm_quantum_operator
 4. In your final response, ALWAYS include:
    - ⚠️ **Job ID: [the_real_job_id]** (in bold and with warning emoji)
    - Backend used
@@ -221,7 +221,7 @@ async def quantum_computing_agent(
         print(error_details)
         print("=" * 80)
         
-        yield AgentMessage(text=error_msg + error_details)
+        yield AgentMessage(text=error_msg)
 
 def run():
     """Starts the Quantum Computing Agent server with persistent storage"""

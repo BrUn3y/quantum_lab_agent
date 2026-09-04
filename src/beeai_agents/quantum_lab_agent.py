@@ -350,7 +350,7 @@ def create_lab_agent():
     
     # Configure Watsonx with Mistral Small
     llm = ChatModel.from_name(
-        f"watsonx:{os.getenv('WATSONX_OPERATIONS_MODEL', 'mistralai/mistral-small-3-1-24b-instruct-2503')}"
+        f"watsonx:{os.getenv('WATSONX_LAB_MODEL', 'mistralai/mistral-small-3-1-24b-instruct-2503')}"
     )
     
     # Create a custom system template that FORCES exact response copying
@@ -563,30 +563,30 @@ async def quantum_lab_agent(
         error_details += f"Details: {str(e)}\n\n"
         error_details += "Traceback:\n"
         error_details += traceback.format_exc()
-        
+
         # Error trajectory
         yield trajectory.trajectory_metadata(
             title="❌ Error detected",
             content=f"**Type:** {type(e).__name__}\n**Message:** {str(e)}\n\nCheck logs for more details."
         )
-        
+
         print("=" * 80)
         print(f"🔴 [Lab Agent] {error_msg}")
         print(error_details)
         print("=" * 80)
-        
-        yield AgentMessage(text=error_msg + error_details)
+
+        yield AgentMessage(text=error_msg)
 
 def run():
     """Starts the Quantum Lab Agent server with persistent storage"""
-    port = int(os.getenv("OPERATIONS_PORT", 8000))
-    host = os.getenv("OPERATIONS_HOST", "127.0.0.1")
-    
+    port = int(os.getenv("LAB_PORT", 8000))
+    host = os.getenv("LAB_HOST", "127.0.0.1")
+
     print("=" * 80)
     print("🚀 Starting Quantum Lab Agent Server")
     print("=" * 80)
     print(f"  ⚡ Agent: Quantum Lab Agent (Orchestrator)")
-    print(f"  🤖 Model: {os.getenv('WATSONX_OPERATIONS_MODEL', 'mistralai/mistral-small-3-1-24b-instruct-2503')}")
+    print(f"  🤖 Model: {os.getenv('WATSONX_LAB_MODEL', 'mistralai/mistral-small-3-1-24b-instruct-2503')}")
     print(f"  🌐 Host: {host}")
     print(f"  🔌 Port: {port}")
     print(f"  🛠️  Tools: 3 (Developer Client A2A, Status Client A2A, Computing Client A2A)")

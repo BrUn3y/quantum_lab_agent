@@ -194,9 +194,10 @@ qc.measure_all()
                 final_states = ['DONE', 'COMPLETED', 'CANCELLED', 'ERROR']
                 
                 while True:
-                    status = job.status()
+                    raw_status = job.status()
+                    status = str(raw_status) if not hasattr(raw_status, 'name') else raw_status.name
                     elapsed = time.time() - start_time
-                    
+
                     # Check timeout
                     if elapsed > input.max_wait_time:
                         result_text += f"⏱️ **Timeout:** Job did not finish in {input.max_wait_time} seconds.\n"
@@ -204,24 +205,24 @@ qc.measure_all()
                         result_text += f"**Job ID:** `{job.job_id()}`\n\n"
                         result_text += "💡 Use `ibm_quantum_job` with this Job ID to check results later.\n"
                         return StringToolOutput(result=result_text)
-                    
+
                     # Check if finished
                     if status in final_states:
                         break
-                    
+
                     # Show progress
                     if status == 'QUEUED':
                         result_text += f"   📊 Status: Queued (waiting {int(elapsed)}s)\n"
                     elif status == 'RUNNING':
                         result_text += f"   🔄 Status: Running (waiting {int(elapsed)}s)\n"
-                    
+
                     # Wait 5 seconds before checking again
                     await asyncio.sleep(5)
-                
+
                 # Job finished
                 result_text += f"\n✅ **Job completed in {int(elapsed)} seconds**\n"
                 result_text += f"**Final status:** {status}\n\n"
-                
+
                 # Get and show results
                 if status in ['DONE', 'COMPLETED']:
                     try:

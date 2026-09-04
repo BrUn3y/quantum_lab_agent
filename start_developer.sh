@@ -22,6 +22,6 @@ if [ -d ".venv" ]; then
 fi
 
 # Iniciar el Developer Agent
-python3 -m beeai_agents.quantum_developer_agent
+uv run python3 -m beeai_agents.quantum_developer_agent
 
 # Made with Bob

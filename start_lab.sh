@@ -24,6 +24,6 @@ if [ -d ".venv" ]; then
 fi
 
 # Start the Lab Agent
-python3 -m beeai_agents.quantum_operations_agent
+uv run python3 -m beeai_agents.quantum_lab_agent
 
 # Made with Bob

@@ -203,8 +203,8 @@ class IBMQuantumInfoTool(Tool[QuantumInfoInput]):
             if hasattr(backend, 'target'):
                 try:
                     target = backend.target
-                    if target and hasattr(target, 'operations'):
-                        operations = list(target.operations)
+                    if target and hasattr(target, 'operation_names'):
+                        operations = list(target.operation_names)
                         result_text += "## 🎯 Supported Operations\n\n"
                         result_text += f"**Total operations:** {len(operations)}\n\n"
                         result_text += "**Available operations:** "

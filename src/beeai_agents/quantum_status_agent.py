@@ -645,7 +645,7 @@ async def quantum_status_agent(
         print(error_details)
         print("=" * 80)
         
-        yield AgentMessage(text=error_msg + error_details)
+        yield AgentMessage(text=error_msg)
 
 def run():
     """Starts the Quantum Status Agent server with persistent storage"""

@@ -157,7 +157,7 @@ WATSONX_API_URL=https://us-south.ml.cloud.ibm.com.....
 
 # Models (default values shown)
 WATSONX_DEVELOPER_MODEL=mistral-large-2512
-WATSONX_OPERATIONS_MODEL=mistralai/mistral-small-3-1-24b-instruct-2503
+WATSONX_LAB_MODEL=mistralai/mistral-small-3-1-24b-instruct-2503
 WATSONX_STATUS_MODEL=mistralai/mistral-small-3-1-24b-instruct-2503
 WATSONX_COMPUTING_MODEL=mistralai/mistral-small-3-1-24b-instruct-2503
 ```
@@ -172,14 +172,14 @@ WATSONX_COMPUTING_MODEL=mistralai/mistral-small-3-1-24b-instruct-2503
 ./start_developer.sh   # Port 8001
 ./start_status.sh      # Port 8002  
 ./start_computing.sh   # Port 8003
-./start_operations.sh  # Port 8000 (start this last)
+./start_lab.sh          # Port 8000 (start this last)
 ```
 
 ### 4. Verify Agents are Running
 
 ```bash
 # Check all agents
-curl http://localhost:8000/.well-known/agent-card.json  # Operations
+curl http://localhost:8000/.well-known/agent-card.json  # Lab
 curl http://localhost:8001/.well-known/agent-card.json  # Developer
 curl http://localhost:8002/.well-known/agent-card.json  # Status
 curl http://localhost:8003/.well-known/agent-card.json  # Computing
@@ -187,17 +187,26 @@ curl http://localhost:8003/.well-known/agent-card.json  # Computing
 
 ## 💬 Usage Examples
 
+Each agent is an A2A server. The agent card's `preferredTransport` is `JSONRPC`, served at `/jsonrpc/`, using the standard A2A `message/send` method. Requests are JSON-RPC 2.0 envelopes carrying an A2A `Message` (verified against a running agent):
+
 ### Example 1: Generate and Execute a Circuit
 
 ```bash
 # Send request to Lab Agent (port 8000)
-curl -X POST http://localhost:8000 \
+curl -X POST http://localhost:8000/jsonrpc/ \
   -H "Content-Type: application/json" \
   -d '{
-    "messages": [{
-      "role": "user",
-      "content": "Create a Bell state circuit and execute it on ibm_torino"
-    }]
+    "jsonrpc": "2.0",
+    "id": "1",
+    "method": "message/send",
+    "params": {
+      "message": {
+        "kind": "message",
+        "messageId": "11111111-1111-1111-1111-111111111111",
+        "role": "user",
+        "parts": [{"kind": "text", "text": "Create a Bell state circuit and execute it on ibm_torino"}]
+      }
+    }
   }'
 ```
 
@@ -211,13 +220,20 @@ curl -X POST http://localhost:8000 \
 ### Example 2: Query Available Backends
 
 ```bash
-curl -X POST http://localhost:8000 \
+curl -X POST http://localhost:8000/jsonrpc/ \
   -H "Content-Type: application/json" \
   -d '{
-    "messages": [{
-      "role": "user",
-      "content": "What quantum computers are available?"
-    }]
+    "jsonrpc": "2.0",
+    "id": "2",
+    "method": "message/send",
+    "params": {
+      "message": {
+        "kind": "message",
+        "messageId": "22222222-2222-2222-2222-222222222222",
+        "role": "user",
+        "parts": [{"kind": "text", "text": "What quantum computers are available?"}]
+      }
+    }
   }'
 ```
 
@@ -230,13 +246,20 @@ curl -X POST http://localhost:8000 \
 ### Example 3: Check Job Status
 
 ```bash
-curl -X POST http://localhost:8000 \
+curl -X POST http://localhost:8000/jsonrpc/ \
   -H "Content-Type: application/json" \
   -d '{
-    "messages": [{
-      "role": "user",
-      "content": "What is the status of job abc123xyz?"
-    }]
+    "jsonrpc": "2.0",
+    "id": "3",
+    "method": "message/send",
+    "params": {
+      "message": {
+        "kind": "message",
+        "messageId": "33333333-3333-3333-3333-333333333333",
+        "role": "user",
+        "parts": [{"kind": "text", "text": "What is the status of job abc123xyz?"}]
+      }
+    }
   }'
 ```
 
@@ -250,23 +273,37 @@ curl -X POST http://localhost:8000 \
 
 ```bash
 # First, generate code
-curl -X POST http://localhost:8000 \
+curl -X POST http://localhost:8000/jsonrpc/ \
   -H "Content-Type: application/json" \
   -d '{
-    "messages": [{
-      "role": "user",
-      "content": "Create a superposition circuit"
-    }]
+    "jsonrpc": "2.0",
+    "id": "4",
+    "method": "message/send",
+    "params": {
+      "message": {
+        "kind": "message",
+        "messageId": "44444444-4444-4444-4444-444444444444",
+        "role": "user",
+        "parts": [{"kind": "text", "text": "Create a superposition circuit"}]
+      }
+    }
   }'
 
 # Then, execute it (code is in memory)
-curl -X POST http://localhost:8000 \
+curl -X POST http://localhost:8000/jsonrpc/ \
   -H "Content-Type: application/json" \
   -d '{
-    "messages": [{
-      "role": "user",
-      "content": "Execute that circuit on ibm_kyiv"
-    }]
+    "jsonrpc": "2.0",
+    "id": "5",
+    "method": "message/send",
+    "params": {
+      "message": {
+        "kind": "message",
+        "messageId": "55555555-5555-5555-5555-555555555555",
+        "role": "user",
+        "parts": [{"kind": "text", "text": "Execute that circuit on ibm_kyiv"}]
+      }
+    }
   }'
 ```
 
@@ -283,7 +320,7 @@ curl -X POST http://localhost:8000 \
 ```
 quantum_lab_agent/
 ├── src/beeai_agents/
-│   ├── quantum_operations_agent.py   # Main orchestrator
+│   ├── quantum_lab_agent.py          # Main orchestrator
 │   ├── quantum_developer_agent.py    # Code generation
 │   ├── quantum_status_agent.py       # Status queries
 │   ├── quantum_computing_agent.py    # Circuit execution
@@ -299,7 +336,7 @@ quantum_lab_agent/
 ├── start_developer.sh     # Start Developer Agent
 ├── start_status.sh        # Start Status Agent
 ├── start_computing.sh     # Start Computing Agent
-├── start_operations.sh    # Start Lab Agent
+├── start_lab.sh           # Start Lab Agent
 ├── .env.example          # Environment template
 └── README.md             # This file
 ```
@@ -320,7 +357,7 @@ python test_bell_circuit.py
 pkill -f "quantum.*agent"
 
 # Or stop individually
-pkill -f "quantum_operations_agent"
+pkill -f "quantum_lab_agent"
 pkill -f "quantum_developer_agent"
 pkill -f "quantum_status_agent"
 pkill -f "quantum_computing_agent"

@@ -504,7 +504,7 @@ async def quantum_developer_agent(
         print(error_details)
         print("=" * 80)
         
-        yield AgentMessage(text=error_msg + error_details)
+        yield AgentMessage(text=error_msg)
 
 def run():
     """Starts the Quantum Developer Agent server with persistent storage"""

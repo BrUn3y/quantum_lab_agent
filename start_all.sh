@@ -32,7 +32,7 @@ echo ""
 
 # Start Developer Agent (port 8001)
 echo "🚀 Starting Developer Agent on port 8001..."
-python -m beeai_agents.quantum_developer_agent &
+uv run python -m beeai_agents.quantum_developer_agent &
 DEVELOPER_PID=$!
 echo "   ✅ Developer Agent started (PID: $DEVELOPER_PID)"
 echo ""
@@ -42,7 +42,7 @@ sleep 3
 
 # Start Status Agent (port 8002)
 echo "🚀 Starting Status Agent on port 8002..."
-python -m beeai_agents.quantum_status_agent &
+uv run python -m beeai_agents.quantum_status_agent &
 STATUS_PID=$!
 echo "   ✅ Status Agent started (PID: $STATUS_PID)"
 echo ""
@@ -52,7 +52,7 @@ sleep 3
 
 # Start Computing Agent (port 8003)
 echo "🚀 Starting Computing Agent on port 8003..."
-python -m beeai_agents.quantum_computing_agent &
+uv run python -m beeai_agents.quantum_computing_agent &
 COMPUTING_PID=$!
 echo "   ✅ Computing Agent started (PID: $COMPUTING_PID)"
 echo ""
@@ -62,9 +62,9 @@ sleep 3
 
 # Start Lab Agent (port 8000)
 echo "🚀 Starting Lab Agent on port 8000..."
-python -m beeai_agents.quantum_operations_agent &
-OPERATIONS_PID=$!
-echo "   ✅ Lab Agent started (PID: $OPERATIONS_PID)"
+uv run python -m beeai_agents.quantum_lab_agent &
+LAB_PID=$!
+echo "   ✅ Lab Agent started (PID: $LAB_PID)"
 echo ""
 
 echo "=========================================="
@@ -91,7 +91,7 @@ echo "     - Model: Mistral Small"
 echo "     - Role: Circuit Execution"
 echo ""
 echo "  🔹 Lab Agent:"
-echo "     - PID: $OPERATIONS_PID"
+echo "     - PID: $LAB_PID"
 echo "     - URL: http://127.0.0.1:8000"
 echo "     - Model: Mistral Small"
 echo "     - Role: Main Orchestrator"
@@ -104,7 +104,7 @@ echo "  - Developer, Status, and Computing agents are invoked automatically via 
 echo "  - Press Ctrl+C to stop all agents"
 echo ""
 echo "🛑 To stop all agents, run:"
-echo "   kill $DEVELOPER_PID $STATUS_PID $COMPUTING_PID $OPERATIONS_PID"
+echo "   kill $DEVELOPER_PID $STATUS_PID $COMPUTING_PID $LAB_PID"
 echo ""
 echo "=========================================="
 

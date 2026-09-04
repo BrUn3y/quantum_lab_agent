@@ -66,7 +66,7 @@ WHEN TO USE THIS TOOL:
 ✅ User asks "how many qubits does [backend] have?"
 
 ❌ DO NOT use for:
-- Executing quantum circuits (use ibm_quantum_executor)
+- Executing quantum circuits (use ibm_quantum_operator)
 - Generating QASM/Qiskit code (use quantum_developer_client)
 
 QUERY EXAMPLES:
