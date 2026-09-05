@@ -301,9 +301,9 @@ RESPONSE FORMAT:
 
 # Agent details for AgentStack
 LAB_AGENT_DETAIL = AgentDetail(
-    user_greeting="🔬 Hello! I'm the Quantum Lab Agent. I orchestrate communication between 3 specialized agents (Developer, Status, Computing) to create, execute, and query quantum circuits on IBM Quantum.",
-    version="1.0.0",
-    framework="BeeAI + A2A (Watsonx/Ollama)",
+    user_greeting="🔬 Hello! I'm the Quantum Lab Agent. Powered by IBM Granite, I coordinate Developer, Status, and Computing agents to design algorithms, run circuits on simulators or IBM Quantum hardware, and track quantum jobs.",
+    version="1.1.0",
+    framework="BeeAI + A2A + IBM Granite 4.2",
     author={"name": "Edgar Bruney"},
     tools=[
         AgentDetailTool(
@@ -329,16 +329,16 @@ LAB_AGENT_SKILLS = [
         description="Orchestrates all quantum operations: code creation, execution, queries, and job management.",
         tags=["Quantum Computing", "IBM Quantum", "Operations", "Orchestration"],
         examples=[
-            "Create a superposition circuit with 2 qubits and execute it",
+            "Create a Bell state, execute it on the local simulator with 1024 shots, and explain the results",
+            "Create Grover's algorithm for 3 qubits and run it on the local simulator",
+            "Create a Bell state and execute it once on the least busy real IBM Quantum backend",
             "What quantum computers are available?",
-            "Show me the status of job d671cklbujdc73cvbp30",
             "Give me detailed information about ibm_fez",
             "Explain what quantum entanglement is",
-            "Create a Bell state and execute it on the simulator",
+            "Create and execute a Deutsch-Jozsa circuit for a balanced oracle",
             "Which is the least busy backend?",
-            "Execute this QASM code on real hardware",
+            "Show me the status and results of job <job-id>",
             "Show me my recent jobs",
-            "Optimize this quantum circuit"
         ]
     )
 ]

@@ -170,11 +170,14 @@ curl -X POST http://127.0.0.1:8000/jsonrpc/ \
 
 | Goal | Prompt |
 |---|---|
-| Generate and execute | `Create a superposition circuit with 2 qubits and execute it on real hardware` |
+| Bell state end-to-end | `Create a Bell state, execute it on the local simulator with 1024 shots, and explain the results` |
+| Grover search | `Create Grover's algorithm for 3 qubits and run it on the local simulator` |
+| Real QPU execution | `Create a Bell state and execute it once on the least busy real IBM Quantum backend` |
 | List available QPUs | `What quantum computers are available?` |
 | Inspect a backend | `Give me detailed information about ibm_fez` |
+| Deutsch–Jozsa | `Create and execute a Deutsch-Jozsa circuit for a balanced oracle` |
 | Explain a concept | `Explain what quantum entanglement is` |
-| Check a job | `What is the status of job <job-id>?` |
+| Check a job | `Show me the status and results of job <job-id>` |
 
 Backend availability depends on the IBM Quantum account. The agent queries the live service and chooses among the backends actually accessible to the configured account.
 

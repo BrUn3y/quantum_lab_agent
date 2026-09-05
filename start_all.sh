@@ -43,11 +43,18 @@ check_port() {
 
 # Check ports before starting
 echo "🔍 Checking ports..."
-check_port 8001
-check_port 8002
-check_port 8003
-check_port 8000
+PORTS_AVAILABLE=true
+check_port 8001 || PORTS_AVAILABLE=false
+check_port 8002 || PORTS_AVAILABLE=false
+check_port 8003 || PORTS_AVAILABLE=false
+check_port 8000 || PORTS_AVAILABLE=false
 echo ""
+
+if [ "$PORTS_AVAILABLE" != true ]; then
+    echo "❌ Quantum agents are already running or one of their ports is occupied."
+    echo "   Use ./restart_all.sh to replace the current stack without creating duplicate registrations."
+    exit 1
+fi
 
 # Start Developer Agent (port 8001)
 echo "🚀 Starting Developer Agent on port 8001..."

@@ -7,6 +7,12 @@ from qiskit.primitives import StatevectorSampler
 
 from beeai_agents.quantum_computing_agent import _execution_parameters
 from beeai_agents.quantum_developer_agent import _basic_algorithm_qasm, _superposition_qasm
+from beeai_agents.quantum_lab_agent import (
+    LAB_AGENT_SKILLS,
+    _is_create_and_execute_request,
+    _is_explanation_query,
+    _is_status_query,
+)
 from beeai_agents.tools.quantum_tool import IBMQuantumTool
 
 
@@ -47,6 +53,15 @@ class BasicAlgorithmTests(unittest.TestCase):
     def test_hyphenated_qubit_count(self):
         response = _superposition_qasm("Create a 2-qubit superposition circuit")
         self.assertIn("qreg q[2];", response)
+
+
+class SuggestedPromptTests(unittest.TestCase):
+    def test_prompts_cover_every_agent_capability(self):
+        examples = LAB_AGENT_SKILLS[0].examples
+        self.assertTrue(all(_is_create_and_execute_request(prompt) for prompt in examples[:3]))
+        self.assertTrue(all(_is_status_query(prompt) for prompt in examples[3:5]))
+        self.assertTrue(_is_explanation_query(examples[5]))
+        self.assertTrue(_is_create_and_execute_request(examples[6]))
 
 
 class ExecutionTests(unittest.IsolatedAsyncioTestCase):
