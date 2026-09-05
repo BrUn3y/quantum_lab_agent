@@ -10,7 +10,12 @@ from beeai_agents.quantum_experiment_agent import (
     is_qaoa_maxcut_request,
     should_submit_hardware,
 )
-from beeai_agents.quantum_lab_agent import _experiment_canvas_from_response, _is_experiment_query
+from beeai_agents.quantum_lab_agent import (
+    _experiment_canvas_from_response,
+    _is_experiment_hardware_followup,
+    _is_experiment_query,
+    _previous_experiment_request,
+)
 from beeai_agents.tools.quantum_experiment_client import extract_experiment_response
 
 
@@ -24,6 +29,24 @@ class ExperimentRoutingTests(unittest.TestCase):
     def test_hardware_comparison_requests_qpu_submission(self):
         prompt = "Compare a QAOA Max-Cut baseline with real IBM Quantum hardware"
         self.assertTrue(should_submit_hardware(prompt))
+
+    def test_hardware_followup_recovers_previous_experiment(self):
+        original = "Use QAOA to solve Max-Cut on a 5-node graph using the local simulator"
+        followup = "now execute the experiment in IBM Quantum"
+        history = [
+            Message(
+                message_id="original-request",
+                role=Role.user,
+                parts=[Part(root=TextPart(text=original))],
+            ),
+            Message(
+                message_id="followup-request",
+                role=Role.user,
+                parts=[Part(root=TextPart(text=followup))],
+            ),
+        ]
+        self.assertTrue(_is_experiment_hardware_followup(followup))
+        self.assertEqual(_previous_experiment_request(history, followup), original)
 
     def test_lab_forwards_experiment_canvas(self):
         artifact = _experiment_canvas_from_response(

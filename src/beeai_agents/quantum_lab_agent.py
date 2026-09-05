@@ -396,6 +396,12 @@ _EXPERIMENT_QUERY_PATTERN = re.compile(
     r"experimento h[ií]brido|error mitigation|mitigaci[oó]n de errores|variational|variacional)\b",
     re.IGNORECASE,
 )
+_EXPERIMENT_FOLLOWUP_PATTERN = re.compile(r"\b(experiment|experimento)\b", re.IGNORECASE)
+_REAL_QUANTUM_PATTERN = re.compile(
+    r"\b(ibm quantum|real (?:quantum )?hardware|real backend|qpu|"
+    r"hardware (?:cu[aá]ntico|real)|backend real|computadora cu[aá]ntica|m[aá]quina cu[aá]ntica)\b",
+    re.IGNORECASE,
+)
 _BACKEND_TOPOLOGY_IMAGE_PATTERN = re.compile(
     r"!\[[^\]]*topology[^\]]*\]\((agentstack://[a-f0-9-]+)\)",
     re.IGNORECASE,
@@ -415,6 +421,27 @@ def _is_create_and_execute_request(request: str) -> bool:
 def _is_experiment_query(request: str) -> bool:
     """Return whether the development Experiment Agent should own the request."""
     return bool(_EXPERIMENT_QUERY_PATTERN.search(request))
+
+
+def _is_experiment_hardware_followup(request: str) -> bool:
+    """Recognize a request to execute the preceding experiment on a real QPU."""
+    return bool(
+        _EXPERIMENT_FOLLOWUP_PATTERN.search(request)
+        and _EXECUTE_PATTERN.search(request)
+        and _REAL_QUANTUM_PATTERN.search(request)
+    )
+
+
+def _previous_experiment_request(history: list[Message], current_request: str) -> str | None:
+    """Find the most recent user request that defined a quantum experiment."""
+    for message in reversed(history):
+        role = getattr(getattr(message, "role", None), "value", getattr(message, "role", None))
+        if role != "user":
+            continue
+        text = get_message_text(message).strip()
+        if text != current_request.strip() and _is_experiment_query(text):
+            return text
+    return None
 
 
 def _single_job_id_query(request: str) -> str | None:
@@ -721,14 +748,25 @@ async def quantum_lab_agent(
     # Iterative and hybrid studies belong to the Experiment Agent. Keep this
     # before the generic create-and-execute route so QAOA/VQE requests are not
     # reduced to a single generated circuit.
-    if _is_experiment_query(user_query):
+    experiment_request = user_query
+    route_experiment = _is_experiment_query(user_query)
+    if not route_experiment and _is_experiment_hardware_followup(user_query):
+        previous_request = _previous_experiment_request(history, user_query)
+        if previous_request:
+            route_experiment = True
+            experiment_request = (
+                f"{previous_request}\n\n"
+                f"Follow-up instruction: {user_query}. Re-run the experiment and submit a new IBM Quantum job."
+            )
+
+    if route_experiment:
         yield trajectory.trajectory_metadata(
             title="🧪 Routing hybrid experiment",
             content="Invoking the Quantum Experiment Agent on port 8004...",
         )
         try:
             experiment_output = await asyncio.wait_for(
-                QuantumExperimentClient().run({"request": user_query}),
+                QuantumExperimentClient().run({"request": experiment_request}),
                 timeout=600,
             )
             experiment_response = experiment_output.get_text_content()
