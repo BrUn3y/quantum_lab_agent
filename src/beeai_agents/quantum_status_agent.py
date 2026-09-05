@@ -451,7 +451,6 @@ async def _create_backend_canvas(text: str, backend_name: str) -> tuple[str, Age
             parts=[
                 TextPart(
                     text=(
-                        f"# {backend_name}: topology and status\n\n"
                         f"![{backend_name} topology](agentstack://{uploaded.id})\n\n"
                         "Live data from IBM Quantum. Node color represents readout assignment error."
                     )

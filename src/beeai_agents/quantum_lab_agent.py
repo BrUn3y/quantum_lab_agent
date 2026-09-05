@@ -375,6 +375,10 @@ _BACKEND_TOPOLOGY_IMAGE_PATTERN = re.compile(
     r"!\[[^\]]*topology[^\]]*\]\((agentstack://[a-f0-9-]+)\)",
     re.IGNORECASE,
 )
+_EXECUTION_RESULT_IMAGE_PATTERN = re.compile(
+    r"!\[[^\]]*execution results[^\]]*\]\((agentstack://[a-f0-9-]+)\)",
+    re.IGNORECASE,
+)
 
 
 def _is_create_and_execute_request(request: str) -> bool:
@@ -409,9 +413,29 @@ def _backend_canvas_from_status(response: str, backend_name: str) -> AgentArtifa
         parts=[
             TextPart(
                 text=(
-                    f"# {backend_name}: topology and status\n\n"
                     f"![{backend_name} topology]({image_match.group(1)})\n\n"
                     "Live data from IBM Quantum. Node color represents readout assignment error."
+                )
+            )
+        ],
+    )
+
+
+def _execution_canvas_from_computing(response: str, qasm_code: str) -> AgentArtifact | None:
+    """Forward the Computing Agent's completed result dashboard into Lab Canvas."""
+    image_match = _EXECUTION_RESULT_IMAGE_PATTERN.search(response)
+    if not image_match:
+        return None
+    backend_match = re.search(r"\*\*Backend:\*\*\s*([^\n]+)", response)
+    backend_name = backend_match.group(1).strip() if backend_match else "Quantum"
+    return AgentArtifact(
+        name=f"{backend_name} execution results",
+        metadata={"backend": backend_name, "content_type": "text/markdown"},
+        parts=[
+            TextPart(
+                text=(
+                    f"![Quantum execution results]({image_match.group(1)})\n\n"
+                    f"```qasm\n{qasm_code}\n```"
                 )
             )
         ],
@@ -625,6 +649,15 @@ async def quantum_lab_agent(
                 "## ⚡ Execution\n\n"
                 f"{computing_response.lstrip()}"
             )
+
+            qasm_code = _extract_qasm(developer_response)
+            artifact = _execution_canvas_from_computing(computing_response, qasm_code or "")
+            if artifact:
+                yield artifact
+                try:
+                    await context.store(artifact)
+                except Exception as store_error:
+                    print(f"⚠️ [Canvas] Could not store execution artifact: {explain_error(store_error)}")
 
             yield trajectory.trajectory_metadata(
                 title="✅ Circuit created and submitted",

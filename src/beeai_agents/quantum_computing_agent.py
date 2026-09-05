@@ -14,22 +14,27 @@ Type: AgentStack Server with A2A (ReActAgent with IBMQuantumTool)
 
 import os
 import re
+import tempfile
 from typing import Annotated
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
-from a2a.types import AgentSkill, Message
+from a2a.types import AgentSkill, Message, TextPart
 from a2a.utils.message import get_message_text
 from agentstack_sdk.server import Server
 from agentstack_sdk.server.context import RunContext
 from agentstack_sdk.server.store.platform_context_store import PlatformContextStore
-from agentstack_sdk.a2a.types import AgentMessage
+from agentstack_sdk.a2a.types import AgentArtifact, AgentMessage
 from agentstack_sdk.a2a.extensions import AgentDetail, AgentDetailTool
 from agentstack_sdk.a2a.extensions import TrajectoryExtensionServer, TrajectoryExtensionSpec
+from agentstack_sdk.a2a.extensions.ui.canvas import CanvasExtensionServer, CanvasExtensionSpec
+from agentstack_sdk.platform.file import File
 
 from beeai_framework.agents.react import ReActAgent
 from beeai_framework.memory import UnconstrainedMemory
 
 from .model_config import create_chat_model, explain_error, model_name, run_agent_with_retries
+from .execution_visualization import RESULT_CANVAS_MARKER
 
 # Import the execution tool
 from .tools import IBMQuantumTool
@@ -158,6 +163,43 @@ def _execution_parameters(request: str) -> dict[str, object]:
         "job_tags": ["quantum-lab", execution_tag],
     }
 
+async def _create_execution_canvas(text: str, qasm_code: str) -> tuple[str, AgentArtifact | None]:
+    """Upload a completed execution dashboard and expose it through Canvas."""
+    match = RESULT_CANVAS_MARKER.search(text)
+    clean_text = RESULT_CANVAS_MARKER.sub("", text).rstrip()
+    if not match:
+        return clean_text, None
+
+    dashboard_path = Path(match.group(1).strip()).resolve()
+    allowed_directory = (Path(tempfile.gettempdir()) / "quantum_lab_pngs").resolve()
+    if dashboard_path.parent != allowed_directory or not dashboard_path.is_file():
+        return clean_text + "\n\n⚠️ The execution dashboard could not be loaded safely.", None
+
+    backend_match = re.search(r"\*\*Backend:\*\*\s*([^\n]+)", clean_text)
+    job_match = re.search(r"\*\*Job ID:\*\*\s*`?([^`\n]+)", clean_text)
+    backend_name = backend_match.group(1).strip() if backend_match else "quantum backend"
+    job_id = job_match.group(1).strip() if job_match else "local execution"
+    try:
+        uploaded = await File.create(
+            filename=f"{job_id}_execution_results.png",
+            content=dashboard_path.read_bytes(),
+            content_type="image/png",
+        )
+        image_markdown = f"![Quantum execution results](agentstack://{uploaded.id})"
+        artifact = AgentArtifact(
+            name=f"{backend_name} execution results",
+            description=f"Measurement outcomes and circuit for job {job_id}.",
+            metadata={"backend": backend_name, "job_id": job_id, "content_type": "text/markdown"},
+            parts=[TextPart(text=f"{image_markdown}\n\n```qasm\n{qasm_code}\n```")],
+        )
+        clean_text += f"\n\n## 📊 Visual execution results\n\n{image_markdown}\n\nThe complete dashboard is available in Canvas."
+        return clean_text, artifact
+    except Exception as error:
+        return clean_text + f"\n\n⚠️ Canvas upload failed: {explain_error(error)}", None
+    finally:
+        dashboard_path.unlink(missing_ok=True)
+
+
 def create_computing_agent():
     """Create the Quantum Computing Agent with its configured chat model."""
     llm = create_chat_model("COMPUTING")
@@ -172,12 +214,14 @@ def create_computing_agent():
 @server.agent(
     name="Quantum Computing Agent",
     detail=COMPUTING_AGENT_DETAIL,
-    skills=COMPUTING_AGENT_SKILLS
+    skills=COMPUTING_AGENT_SKILLS,
+    default_output_modes=["text/plain", "image/png"],
 )
 async def quantum_computing_agent(
     input: Message,
     context: RunContext,
-    trajectory: Annotated[TrajectoryExtensionServer, TrajectoryExtensionSpec()]
+    trajectory: Annotated[TrajectoryExtensionServer, TrajectoryExtensionSpec()],
+    _canvas: Annotated[CanvasExtensionServer, CanvasExtensionSpec()],
 ):
     """
     Main handler for the Quantum Computing Agent.
@@ -210,7 +254,13 @@ async def quantum_computing_agent(
         )
         try:
             tool_output = await IBMQuantumTool().run({"qasm_code": qasm_code, **parameters})
-            response = tool_output.get_text_content()
+            response, artifact = await _create_execution_canvas(tool_output.get_text_content(), qasm_code)
+            if artifact:
+                yield artifact
+                try:
+                    await context.store(artifact)
+                except Exception as store_error:
+                    print(f"⚠️ [Canvas] Could not store execution artifact: {explain_error(store_error)}")
             succeeded = "**Job ID:**" in response
             yield trajectory.trajectory_metadata(
                 title="✅ Job submitted" if succeeded else "❌ Execution failed",
