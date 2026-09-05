@@ -43,6 +43,18 @@ Local inference uses **IBM Granite 4.2 8B** through Ollama by default.
 
 <p align="center"><em>Grover circuit generation, coordinated execution, measurement results, and circuit visualization in Agent Stack Canvas.</em></p>
 
+### QAOA experiment on real IBM Quantum hardware
+
+<p align="center">
+  <img src="docs/images/quantum-experiment-real-hardware.gif" alt="QAOA Max-Cut experiment optimized locally, submitted to real IBM Quantum hardware, and visualized in Agent Stack" width="960">
+</p>
+
+<p align="center"><em>End-to-end QAOA Max-Cut: exact classical validation, experiment Canvas, execution on <code>ibm_marrakesh</code>, tagged Job ID, and live results from 1,024 shots.</em></p>
+
+```text
+Run the QAOA Max-Cut experiment on a 5-node graph and execute the optimized circuit once on the least busy real IBM Quantum backend with 1024 shots. Always create a new job and return the backend name and Job ID.
+```
+
 ## 🏗️ Architecture
 
 <p align="center">
