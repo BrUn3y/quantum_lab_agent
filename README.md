@@ -58,7 +58,7 @@ Run the QAOA Max-Cut experiment on a 5-node graph and execute the optimized circ
 ## 🏗️ Architecture
 
 <p align="center">
-  <img src="docs/images/architecture.png" alt="Quantum Lab Agent architecture" width="760">
+  <img src="docs/images/architecture.png" alt="Quantum Lab Agent architecture showing BeeAI orchestration, Qiskit services, and IBM Quantum Platform" width="960">
 </p>
 
 ```text
@@ -280,6 +280,7 @@ The Developer, Status, Computing, and Experiment agents must remain reachable th
 ```text
 quantum_lab_agent/
 ├── docs/images/architecture.png
+├── docs/images/architecture.svg
 ├── docs/images/quantum-lab-demo.gif
 ├── docs/images/quantum-experiment-real-hardware.gif
 ├── src/beeai_agents/
