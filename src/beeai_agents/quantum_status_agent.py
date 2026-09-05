@@ -444,6 +444,7 @@ async def _create_backend_canvas(text: str, backend_name: str) -> tuple[str, Age
             content=dashboard_path.read_bytes(),
             content_type="image/png",
         )
+        queried_at = time.strftime("%Y-%m-%d %H:%M:%S %Z")
         artifact = AgentArtifact(
             name=f"{backend_name} topology and status",
             description=f"Live IBM Quantum topology and health summary for {backend_name}.",
@@ -452,7 +453,8 @@ async def _create_backend_canvas(text: str, backend_name: str) -> tuple[str, Age
                 TextPart(
                     text=(
                         f"![{backend_name} topology](agentstack://{uploaded.id})\n\n"
-                        "Live data from IBM Quantum. Node color represents readout assignment error."
+                        "Live data from IBM Quantum. Node color represents readout assignment error.\n\n"
+                        f"Consulted locally: {queried_at}"
                     )
                 )
             ],
@@ -467,6 +469,28 @@ async def _create_backend_canvas(text: str, backend_name: str) -> tuple[str, Age
         return clean_text + f"\n\n⚠️ Canvas upload failed: {explain_error(error)}", None
     finally:
         dashboard_path.unlink(missing_ok=True)
+
+
+def _create_job_results_canvas(response: str, job_id: str) -> AgentArtifact | None:
+    """Expose an uploaded job histogram in Canvas for single-job queries."""
+    image_match = re.search(r"!\[[^\]]*\]\((agentstack://[a-f0-9-]+)\)", response, re.IGNORECASE)
+    if not image_match:
+        return None
+    queried_at = time.strftime("%Y-%m-%d %H:%M:%S %Z")
+    return AgentArtifact(
+        name=f"Job {job_id} results",
+        description=f"Measurement outcomes for IBM Quantum job {job_id}.",
+        metadata={"job_id": job_id, "content_type": "text/markdown"},
+        parts=[
+            TextPart(
+                text=(
+                    f"![Quantum job results]({image_match.group(1)})\n\n"
+                    "Live measurement results retrieved from IBM Quantum.\n\n"
+                    f"Consulted locally: {queried_at}"
+                )
+            )
+        ],
+    )
 
 
 # Create AgentStack server
@@ -607,6 +631,13 @@ async def quantum_status_agent(
             response = tool_output.get_text_content()
             if "__QUANTUM_PNG__" in response:
                 response = await _upload_png_and_replace(response)
+            artifact = _create_job_results_canvas(response, job_id)
+            if artifact:
+                yield artifact
+                try:
+                    await context.store(artifact)
+                except Exception as store_error:
+                    print(f"⚠️ [Canvas] Could not store job results artifact: {explain_error(store_error)}")
             yield trajectory.trajectory_metadata(
                 title="✅ Job data obtained",
                 content="IBM Quantum returned the current job status and available results.",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import tempfile
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 import matplotlib
@@ -21,12 +22,13 @@ def result_canvas_marker(path: str | Path) -> str:
     return f"__QUANTUM_RESULT_CANVAS__:{Path(path)}"
 
 
-def _draw_circuit(ax, circuit) -> None:
+def _draw_circuit(ax, circuit, instructions) -> None:
     qubit_count = circuit.num_qubits
-    shown_ops = list(circuit.data)[:24]
+    shown_ops = list(instructions)
     width = max(len(shown_ops) + 1, 6)
     ax.set_xlim(-0.8, width)
     ax.set_ylim(-0.8, max(qubit_count - 0.2, 0.8))
+    ax.set_aspect("equal", adjustable="box", anchor="W")
     ax.axis("off")
 
     for index in range(qubit_count):
@@ -61,10 +63,6 @@ def _draw_circuit(ax, circuit) -> None:
             ax.add_patch(box)
             ax.text(x, y, label[:5], color="#161616", ha="center", va="center", fontsize=7, weight="bold")
 
-    if len(circuit.data) > len(shown_ops):
-        ax.text(width - 0.2, -0.55, f"+{len(circuit.data) - len(shown_ops)} operations", color="#8d8d8d", ha="right", fontsize=8)
-
-
 def render_execution_dashboard(
     circuit,
     counts: dict[str, int],
@@ -79,10 +77,13 @@ def render_execution_dashboard(
     values = [item[1] for item in states_and_counts]
     total = sum(values) or shots
 
-    figure = plt.figure(figsize=(16, 9), facecolor="#161616")
+    figure = plt.figure(figsize=(16, 12), facecolor="#161616")
     grid = figure.add_gridspec(12, 12, left=0.045, right=0.975, top=0.94, bottom=0.07, hspace=1.2)
-    histogram = figure.add_subplot(grid[2:7, :])
-    circuit_ax = figure.add_subplot(grid[9:12, :])
+    histogram = figure.add_subplot(grid[2:6, :])
+    operations = list(circuit.data)
+    operation_chunks = [operations[index:index + 12] for index in range(0, min(len(operations), 36), 12)] or [[]]
+    circuit_grid = grid[7:12, :].subgridspec(len(operation_chunks), 1, hspace=0.35)
+    circuit_axes = [figure.add_subplot(circuit_grid[index, 0]) for index in range(len(operation_chunks))]
 
     figure.text(0.047, 0.925, "EXECUTION RESULTS", color="#78a9ff", fontsize=10, weight="bold")
     figure.text(0.047, 0.875, backend_name, color="#f4f4f4", fontsize=25, weight="bold")
@@ -106,10 +107,15 @@ def render_execution_dashboard(
     for bar, value in zip(bars, values):
         histogram.text(bar.get_x() + bar.get_width() / 2, value, f"{value:,}\n{value / total:.1%}", color="#f4f4f4", ha="center", va="bottom", fontsize=8)
 
-    figure.text(0.047, 0.285, "CIRCUIT", color="#8d8d8d", fontsize=9, weight="bold")
-    figure.text(0.047, 0.255, "Diagram", color="#f4f4f4", fontsize=10, weight="bold")
-    figure.add_artist(plt.Line2D([0.047, 0.103], [0.245, 0.245], color="#33b1ff", linewidth=2))
-    _draw_circuit(circuit_ax, circuit)
+    figure.text(0.047, 0.40, "CIRCUIT", color="#8d8d8d", fontsize=9, weight="bold")
+    figure.text(0.047, 0.375, "Diagram", color="#f4f4f4", fontsize=10, weight="bold")
+    figure.add_artist(plt.Line2D([0.047, 0.103], [0.367, 0.367], color="#33b1ff", linewidth=2))
+    for circuit_ax, chunk in zip(circuit_axes, operation_chunks):
+        _draw_circuit(circuit_ax, circuit, chunk)
+    if len(operations) > 36:
+        figure.text(0.975, 0.04, f"+{len(operations) - 36} operations not shown", color="#8d8d8d", fontsize=8, ha="right")
+    queried_at = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+    figure.text(0.975, 0.025, f"Queried locally • {queried_at}", color="#6f6f6f", fontsize=8, ha="right")
 
     output_directory = Path(tempfile.gettempdir()) / "quantum_lab_pngs"
     output_directory.mkdir(parents=True, exist_ok=True)
