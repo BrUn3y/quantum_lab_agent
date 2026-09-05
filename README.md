@@ -34,6 +34,14 @@ Local inference uses **IBM Granite 4.2 8B** through Ollama by default.
 | 📊 **Quantum Status Agent** | Status monitoring specialist | `8002` | [quantum-status-agent](https://github.com/BrUn3y/quantum-status-agent) |
 | ⚡ **Quantum Computing Agent** | Circuit execution specialist | `8003` | [quantum-computing-agent](https://github.com/BrUn3y/quantum-computing-agent) |
 
+## 🎬 Demo
+
+<p align="center">
+  <img src="docs/images/quantum-lab-demo.gif" alt="Quantum Lab Agent generating and executing a Grover circuit in Agent Stack" width="960">
+</p>
+
+<p align="center"><em>Grover circuit generation, coordinated execution, measurement results, and circuit visualization in Agent Stack Canvas.</em></p>
+
 ## 🏗️ Architecture
 
 <p align="center">
