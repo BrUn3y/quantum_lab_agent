@@ -1,5 +1,24 @@
 #!/bin/bash
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOG_DIR="${AGENT_LOG_DIR:-$SCRIPT_DIR/.logs}"
+mkdir -p "$LOG_DIR"
+
+# Use Granite 4.2 8B by default while allowing explicit environment overrides.
+export DEVELOPER_MODEL="${DEVELOPER_MODEL:-ollama:granite4.2:8b}"
+export STATUS_MODEL="${STATUS_MODEL:-ollama:granite4.2:8b}"
+export COMPUTING_MODEL="${COMPUTING_MODEL:-ollama:granite4.2:8b}"
+export LAB_MODEL="${LAB_MODEL:-ollama:granite4.2:8b}"
+
+DEVELOPER_LOG="$LOG_DIR/developer.log"
+STATUS_LOG="$LOG_DIR/status.log"
+COMPUTING_LOG="$LOG_DIR/computing.log"
+LAB_LOG="$LOG_DIR/lab.log"
+: > "$DEVELOPER_LOG"
+: > "$STATUS_LOG"
+: > "$COMPUTING_LOG"
+: > "$LAB_LOG"
+
 echo "=========================================="
 echo "🚀 Starting Quantum Lab Agent System"
 echo "=========================================="
@@ -32,7 +51,7 @@ echo ""
 
 # Start Developer Agent (port 8001)
 echo "🚀 Starting Developer Agent on port 8001..."
-uv run python -m beeai_agents.quantum_developer_agent &
+PYTHONUNBUFFERED=1 uv run python -m beeai_agents.quantum_developer_agent > >(tee -a "$DEVELOPER_LOG") 2>&1 &
 DEVELOPER_PID=$!
 echo "   ✅ Developer Agent started (PID: $DEVELOPER_PID)"
 echo ""
@@ -42,7 +61,7 @@ sleep 3
 
 # Start Status Agent (port 8002)
 echo "🚀 Starting Status Agent on port 8002..."
-uv run python -m beeai_agents.quantum_status_agent &
+PYTHONUNBUFFERED=1 uv run python -m beeai_agents.quantum_status_agent > >(tee -a "$STATUS_LOG") 2>&1 &
 STATUS_PID=$!
 echo "   ✅ Status Agent started (PID: $STATUS_PID)"
 echo ""
@@ -52,7 +71,7 @@ sleep 3
 
 # Start Computing Agent (port 8003)
 echo "🚀 Starting Computing Agent on port 8003..."
-uv run python -m beeai_agents.quantum_computing_agent &
+PYTHONUNBUFFERED=1 uv run python -m beeai_agents.quantum_computing_agent > >(tee -a "$COMPUTING_LOG") 2>&1 &
 COMPUTING_PID=$!
 echo "   ✅ Computing Agent started (PID: $COMPUTING_PID)"
 echo ""
@@ -62,7 +81,7 @@ sleep 3
 
 # Start Lab Agent (port 8000)
 echo "🚀 Starting Lab Agent on port 8000..."
-uv run python -m beeai_agents.quantum_lab_agent &
+PYTHONUNBUFFERED=1 uv run python -m beeai_agents.quantum_lab_agent > >(tee -a "$LAB_LOG") 2>&1 &
 LAB_PID=$!
 echo "   ✅ Lab Agent started (PID: $LAB_PID)"
 echo ""
@@ -75,25 +94,25 @@ echo "📊 Agent Details:"
 echo "  🔹 Developer Agent:"
 echo "     - PID: $DEVELOPER_PID"
 echo "     - URL: http://127.0.0.1:8001"
-echo "     - Model: granite4.2:8b (Ollama)"
+echo "     - Model: $DEVELOPER_MODEL"
 echo "     - Role: Code Generation & Explanations"
 echo ""
 echo "  🔹 Status Agent:"
 echo "     - PID: $STATUS_PID"
 echo "     - URL: http://127.0.0.1:8002"
-echo "     - Model: granite4.2:8b (Ollama)"
+echo "     - Model: $STATUS_MODEL"
 echo "     - Role: Backend & Job Status Queries"
 echo ""
 echo "  🔹 Computing Agent:"
 echo "     - PID: $COMPUTING_PID"
 echo "     - URL: http://127.0.0.1:8003"
-echo "     - Model: granite4.2:8b (Ollama)"
+echo "     - Model: $COMPUTING_MODEL"
 echo "     - Role: Circuit Execution"
 echo ""
 echo "  🔹 Lab Agent:"
 echo "     - PID: $LAB_PID"
 echo "     - URL: http://127.0.0.1:8000"
-echo "     - Model: granite4.2:8b (Ollama)"
+echo "     - Model: $LAB_MODEL"
 echo "     - Role: Main Orchestrator"
 echo ""
 echo "=========================================="
@@ -101,6 +120,7 @@ echo ""
 echo "💡 Tips:"
 echo "  - Use Lab Agent (port 8000) as main entry point"
 echo "  - Developer, Status, and Computing agents are invoked automatically via A2A"
+echo "  - View all logs with: ./view_logs.sh"
 echo "  - Press Ctrl+C to stop all agents"
 echo ""
 echo "🛑 To stop all agents, run:"
