@@ -61,6 +61,7 @@ The Lab Agent combines the specialized responses into a single answer containing
 | ⚡ **Real execution** | Submits circuits to accessible IBM Quantum hardware |
 | 📊 **Live monitoring** | Retrieves backend availability, queues, job state, and results |
 | 🗺️ **Backend Canvas** | Shows a live topology and health dashboard for specific `ibm_*` backend queries |
+| 📈 **Execution Canvas** | Presents completed measurement outcomes and the executed circuit in a high-resolution dashboard |
 | 🔄 **Multi-agent workflows** | Chains generation → execution → result inspection |
 | 🧠 **Local inference** | Runs IBM Granite 4.2 8B through Ollama |
 

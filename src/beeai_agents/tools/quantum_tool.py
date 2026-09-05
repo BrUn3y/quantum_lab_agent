@@ -11,6 +11,8 @@ from typing import Optional
 import asyncio
 import time
 
+from ..execution_visualization import render_execution_dashboard, result_canvas_marker
+
 class QuantumInput(BaseModel):
     qasm_code: str = Field(description="Quantum circuit code. Can be OpenQASM 2.0/3.0 OR Qiskit Python code. The system automatically detects the format and converts if necessary.")
     use_real_device: bool = Field(default=False, description="If True, uses real quantum hardware (QPU). If False, uses simulator.")
@@ -214,6 +216,14 @@ qc.measure_all()
                 for state, count in sorted(counts.items(), key=lambda item: item[1], reverse=True)[:10]:
                     result_text += f"| `{state}` | {count:,} | {(count / total) * 100:.2f}% |\n"
                 result_text += f"\n**Total measurements:** {total:,}\n"
+                dashboard_path = render_execution_dashboard(
+                    qc,
+                    counts,
+                    backend_name=backend_name,
+                    job_id=job.job_id(),
+                    shots=input.shots,
+                )
+                result_text += f"\n{result_canvas_marker(dashboard_path)}\n"
                 return StringToolOutput(result=result_text)
 
             # If wait_for_results is True, wait for completion
@@ -281,6 +291,15 @@ qc.measure_all()
                                 if '00' in counts and '11' in counts:
                                     result_text += "💡 **Interpretation:** This pattern suggests a Bell state (entanglement).\n"
                                     result_text += f"States `00` and `11` appear with similar frequencies, indicating quantum superposition.\n\n"
+
+                                dashboard_path = render_execution_dashboard(
+                                    transpiled_qc,
+                                    counts,
+                                    backend_name=backend_name,
+                                    job_id=job.job_id(),
+                                    shots=input.shots,
+                                )
+                                result_text += f"{result_canvas_marker(dashboard_path)}\n"
                             else:
                                 result_text += "⚠️ Results available but in unexpected format.\n"
                                 result_text += f"Use `ibm_quantum_job` with Job ID `{job.job_id()}` to see details.\n\n"

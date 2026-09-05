@@ -68,6 +68,7 @@ class BackendVisualizationTests(unittest.TestCase):
             "ibm_test",
         )
         self.assertIsNotNone(artifact)
+        self.assertFalse(artifact.parts[0].root.text.startswith("#"))
 
     def test_marker_round_trip(self):
         marker = canvas_marker("/tmp/quantum_lab_pngs/example.png")
