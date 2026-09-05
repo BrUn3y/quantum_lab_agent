@@ -8,12 +8,14 @@ This agent is the main entry point of the system and is responsible for:
 - Querying backend and job status
 - Orchestrating communication between components
 
-Model: mistralai/mistral-small-3-1-24b-instruct-2503 (Watsonx)
+Model: configurable via LAB_MODEL (Ollama/Watsonx)
 Port: 8000
 Type: Main A2A Server + A2A Client (invokes Developer)
 """
 
+import asyncio
 import os
+import re
 from typing import Annotated
 from collections.abc import AsyncGenerator
 
@@ -27,8 +29,9 @@ from agentstack_sdk.a2a.extensions import AgentDetail, AgentDetailTool
 from agentstack_sdk.a2a.extensions import TrajectoryExtensionServer, TrajectoryExtensionSpec
 
 from beeai_framework.agents.react import ReActAgent
-from beeai_framework.backend import ChatModel
 from beeai_framework.memory import TokenMemory
+
+from .model_config import create_chat_model, explain_error, model_name, run_agent_with_retries
 
 # Import tools from the tools folder
 from .tools import (
@@ -300,7 +303,7 @@ RESPONSE FORMAT:
 LAB_AGENT_DETAIL = AgentDetail(
     user_greeting="🔬 Hello! I'm the Quantum Lab Agent. I orchestrate communication between 3 specialized agents (Developer, Status, Computing) to create, execute, and query quantum circuits on IBM Quantum.",
     version="1.0.0",
-    framework="BeeAI + Watsonx + A2A",
+    framework="BeeAI + A2A (Watsonx/Ollama)",
     author={"name": "Edgar Bruney"},
     tools=[
         AgentDetailTool(
@@ -343,15 +346,96 @@ LAB_AGENT_SKILLS = [
 # Create AgentStack server
 server = Server()
 
+
+_CREATE_PATTERN = re.compile(
+    r"\b(create|generate|build|make|prepare|design|crea\w*|genera\w*|constru\w*|prepara\w*)\b",
+    re.IGNORECASE,
+)
+_EXECUTE_PATTERN = re.compile(
+    r"\b(execut\w*|run|running|test\w*|submit\w*|ejec(?:u|ú)t\w*|corre\w*|prueb\w*|prob\w*|env[ií]\w*)\b",
+    re.IGNORECASE,
+)
+_QASM_FENCE_PATTERN = re.compile(r"```(?:open)?qasm\s*(OPENQASM\s+[\s\S]*?)```", re.IGNORECASE)
+_QASM_PATTERN = re.compile(r"OPENQASM\s+(?:2\.0|3\.0)\s*;[\s\S]*", re.IGNORECASE)
+_JOB_ID_PATTERN = re.compile(r"\b[a-z0-9]{16,}\b", re.IGNORECASE)
+_JOB_QUERY_PATTERN = re.compile(r"\b(job|status|estado|result\w*|resultado\w*|consulta\w*)\b", re.IGNORECASE)
+
+
+def _is_create_and_execute_request(request: str) -> bool:
+    """Return whether a request explicitly asks to create and execute a circuit."""
+    return bool(_CREATE_PATTERN.search(request) and _EXECUTE_PATTERN.search(request))
+
+
+def _single_job_id_query(request: str) -> str | None:
+    """Return the job ID when the request is an unambiguous single-job query."""
+    job_ids = list(dict.fromkeys(_JOB_ID_PATTERN.findall(request)))
+    return job_ids[0] if len(job_ids) == 1 and _JOB_QUERY_PATTERN.search(request) else None
+
+
+def _extract_qasm(response: str) -> str | None:
+    """Extract a complete OpenQASM program from an agent response."""
+    fenced_match = _QASM_FENCE_PATTERN.search(response)
+    if fenced_match:
+        qasm = fenced_match.group(1)
+        if "\\n" in qasm:
+            qasm = qasm.replace("\\r\\n", "\n").replace("\\n", "\n").replace('\\"', '"')
+        return qasm.strip()
+
+    qasm_match = _QASM_PATTERN.search(response)
+    if not qasm_match:
+        return None
+
+    qasm = qasm_match.group(0)
+    # Client responses append their own Markdown note after the generated answer.
+    qasm = re.split(r"\n\s*---\s*\n", qasm, maxsplit=1)[0]
+    if "\\n" in qasm:
+        qasm = qasm.replace("\\r\\n", "\n").replace("\\n", "\n").replace('\\"', '"')
+    return qasm.strip()
+
+
+async def _create_and_execute(request: str) -> tuple[str, str]:
+    """Run the two-agent workflow without relying on an LLM to copy QASM between tools."""
+    developer_request = (
+        "Generate only the complete OpenQASM 2.0 circuit requested below. "
+        "Include measurements, return exactly one qasm code block, and do not execute it or discuss backends.\n\n"
+        f"User request: {request}"
+    )
+    developer_output = await asyncio.wait_for(
+        QuantumDeveloperClient().run({"request": developer_request, "format": "qasm"}),
+        timeout=180,
+    )
+    developer_response = developer_output.get_text_content()
+    qasm_code = _extract_qasm(developer_response)
+    if not qasm_code:
+        raise ValueError("The Developer Agent response did not contain a complete OpenQASM program.")
+
+    from qiskit import QuantumCircuit
+
+    circuit = QuantumCircuit.from_qasm_str(qasm_code)
+    if not any(instruction.operation.name == "measure" for instruction in circuit.data):
+        raise ValueError("The generated OpenQASM program does not contain measurements.")
+
+    execution_request = (
+        f"{request}\n\n"
+        "Execute exactly once. If the user requested real hardware without naming a backend, "
+        "select the least busy operational real backend. Only use a simulator when the user "
+        "did not request real hardware and did not name a backend. "
+        "Return the Job ID, backend, status, and results when available.\n\n"
+        f"```qasm\n{qasm_code}\n```"
+    )
+    computing_output = await asyncio.wait_for(
+        QuantumComputingClient().run({"request": execution_request}),
+        timeout=300,
+    )
+    return developer_response, computing_output.get_text_content()
+
+
 def create_lab_agent():
-    """Creates an instance of the Quantum Lab Agent with Mistral Small"""
+    """Create the Quantum Lab Agent with its configured chat model."""
     from beeai_framework.agents.react.runners.default.prompts import SystemPromptTemplateInput
     from beeai_framework.template import PromptTemplate
     
-    # Configure Watsonx with Mistral Small
-    llm = ChatModel.from_name(
-        f"watsonx:{os.getenv('WATSONX_LAB_MODEL', 'mistralai/mistral-small-3-1-24b-instruct-2503')}"
-    )
+    llm = create_chat_model("LAB")
     
     # Create a custom system template that FORCES exact response copying
     custom_system_template = PromptTemplate(
@@ -448,9 +532,12 @@ async def quantum_lab_agent(
     
     Includes conversation history management to maintain context.
     """
-    # STEP 0: Store user message in history
-    await context.store(input)
-    
+    # STEP 0: Store user message in history (best-effort - not critical for operation)
+    try:
+        await context.store(input)
+    except Exception as e:
+        print(f"⚠️ [History] Could not store user message (timeout or error): {str(e)}")
+
     user_query = get_message_text(input)
     print("=" * 80)
     print(f"⚡ [Lab Agent] Received query: '{user_query[:100]}...'")
@@ -474,6 +561,86 @@ async def quantum_lab_agent(
         title="🔍 Analyzing request",
         content=f"Processing user query:\n```\n{user_query[:200]}{'...' if len(user_query) > 200 else ''}\n```\n\n**Context:** {len(history)} messages in history"
     )
+
+    # Creating and executing requires two dependent tool calls. Route this
+    # workflow deterministically so a model cannot lose the generated QASM,
+    # hallucinate a tool name, or stop after only the first agent responds.
+    if _is_create_and_execute_request(user_query):
+        yield trajectory.trajectory_metadata(
+            title="🧪 Creating quantum circuit",
+            content="Requesting complete OpenQASM code from the Developer Agent...",
+        )
+        try:
+            developer_response, computing_response = await _create_and_execute(user_query)
+            response = (
+                f"{developer_response.rstrip()}\n\n"
+                "## ⚡ Execution\n\n"
+                f"{computing_response.lstrip()}"
+            )
+
+            yield trajectory.trajectory_metadata(
+                title="✅ Circuit created and submitted",
+                content=(
+                    "- [x] QASM generated and validated\n"
+                    "- [x] Circuit sent once to the Computing Agent\n"
+                    "- [x] Execution response received"
+                ),
+            )
+
+            response_message = AgentMessage(text=response)
+            yield response_message
+            try:
+                await context.store(response_message)
+                print("📚 [History] Deterministic workflow response stored")
+            except Exception as e:
+                print(f"⚠️ [History] Could not store response (timeout or error): {str(e)}")
+            return
+        except Exception as e:
+            error_message = AgentMessage(
+                text=(
+                    "❌ I could not complete the create-and-execute workflow. "
+                    f"{explain_error(e)}"
+                )
+            )
+            yield trajectory.trajectory_metadata(
+                title="❌ Create-and-execute workflow failed",
+                content=f"**Type:** {type(e).__name__}\n**Message:** {explain_error(e)}",
+            )
+            yield error_message
+            try:
+                await context.store(error_message)
+            except Exception as store_error:
+                print(f"⚠️ [History] Could not store error response: {str(store_error)}")
+            return
+
+    job_id = _single_job_id_query(user_query)
+    if job_id:
+        yield trajectory.trajectory_metadata(
+            title="📊 Querying quantum job",
+            content=f"Querying IBM Quantum for job `{job_id}`...",
+        )
+        try:
+            status_output = await asyncio.wait_for(
+                QuantumStatusClient().run({"query": user_query}),
+                timeout=180,
+            )
+            response_message = AgentMessage(text=status_output.get_text_content())
+            yield trajectory.trajectory_metadata(
+                title="✅ Job status obtained",
+                content="The Status Agent returned current IBM Quantum job data.",
+            )
+            yield response_message
+            try:
+                await context.store(response_message)
+            except Exception as e:
+                print(f"⚠️ [History] Could not store status response: {str(e)}")
+        except Exception as e:
+            yield trajectory.trajectory_metadata(
+                title="❌ Job query failed",
+                content=f"**Type:** {type(e).__name__}\n**Message:** {explain_error(e)}",
+            )
+            yield AgentMessage(text=f"❌ Could not query job `{job_id}`: {explain_error(e)}")
+        return
     
     # Create agent with instructions and tools
     agent = create_lab_agent()
@@ -481,7 +648,7 @@ async def quantum_lab_agent(
     # Step 2: Agent preparation
     yield trajectory.trajectory_metadata(
         title="🤖 Preparing ReAct agent",
-        content=f"**Configuration:**\n- Model: Mistral Small 3.1\n- Tools: Developer Client, Status Client, Computing Client\n- Memory: 6K tokens\n- History: {len(history)} messages loaded"
+        content=f"**Configuration:**\n- Model: {model_name('LAB')}\n- Tools: Developer Client, Status Client, Computing Client\n- Memory: 6K tokens\n- History: {len(history)} messages loaded"
     )
     
     # Build conversation context for the prompt
@@ -507,7 +674,7 @@ async def quantum_lab_agent(
     # Execute the agent
     try:
         # Execute without explicit emitter - agent uses its own internal emitter
-        run_context = await agent.run(full_prompt)
+        run_context = await run_agent_with_retries(agent, full_prompt)
         
         # Update trajectory with progress
         yield trajectory.trajectory_metadata(
@@ -552,22 +719,25 @@ async def quantum_lab_agent(
         # Yield response to user
         yield response_message
         
-        # IMPORTANT: Store response in history for future interactions
-        await context.store(response_message)
-        print("📚 [History] Response stored in conversation history")
-        
+        # IMPORTANT: Store response in history for future interactions (best-effort)
+        try:
+            await context.store(response_message)
+            print("📚 [History] Response stored in conversation history")
+        except Exception as e:
+            print(f"⚠️ [History] Could not store response (timeout or error): {str(e)}")
+
     except Exception as e:
         import traceback
-        error_msg = f"❌ Error in Lab Agent: {str(e)}"
+        error_msg = f"❌ Error in Lab Agent: {explain_error(e)}"
         error_details = f"\n\nError type: {type(e).__name__}\n"
-        error_details += f"Details: {str(e)}\n\n"
+        error_details += f"Details: {explain_error(e)}\n\n"
         error_details += "Traceback:\n"
         error_details += traceback.format_exc()
 
         # Error trajectory
         yield trajectory.trajectory_metadata(
             title="❌ Error detected",
-            content=f"**Type:** {type(e).__name__}\n**Message:** {str(e)}\n\nCheck logs for more details."
+            content=f"**Type:** {type(e).__name__}\n**Message:** {explain_error(e)}\n\nCheck logs for more details."
         )
 
         print("=" * 80)
@@ -586,7 +756,7 @@ def run():
     print("🚀 Starting Quantum Lab Agent Server")
     print("=" * 80)
     print(f"  ⚡ Agent: Quantum Lab Agent (Orchestrator)")
-    print(f"  🤖 Model: {os.getenv('WATSONX_LAB_MODEL', 'mistralai/mistral-small-3-1-24b-instruct-2503')}")
+    print(f"  🤖 Model: {model_name('LAB')}")
     print(f"  🌐 Host: {host}")
     print(f"  🔌 Port: {port}")
     print(f"  🛠️  Tools: 3 (Developer Client A2A, Status Client A2A, Computing Client A2A)")

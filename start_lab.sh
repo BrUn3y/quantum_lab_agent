@@ -2,7 +2,7 @@
 
 # Script to start the Quantum Lab Agent
 # Port: 8000
-# Model: Mistral Small
+# Model: Granite 4 Small Hybrid via Ollama
 
 echo "=================================="
 echo "⚡ Quantum Lab Agent"
@@ -10,7 +10,7 @@ echo "=================================="
 echo ""
 echo "Starting main orchestrator agent..."
 echo "Port: 8000"
-echo "Model: Mistral Small"
+echo "Model: granite4:small-h (Ollama)"
 echo ""
 echo "⚠️  IMPORTANT: Make sure the Developer Agent is running on port 8001"
 echo ""

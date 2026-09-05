@@ -14,6 +14,7 @@ class QuantumInput(BaseModel):
     qasm_code: str = Field(description="Quantum circuit code. Can be OpenQASM 2.0/3.0 OR Qiskit Python code. The system automatically detects the format and converts if necessary.")
     use_real_device: bool = Field(default=False, description="If True, uses real quantum hardware (QPU). If False, uses simulator.")
     backend_name: str = Field(default="", description="Specific backend name to use (optional). If empty, automatically selected.")
+    shots: int = Field(default=1024, ge=1, description="Number of circuit executions (default: 1024).")
     wait_for_results: bool = Field(default=False, description="If True, waits for the job to finish and shows results. If False, only returns the Job ID immediately.")
     max_wait_time: int = Field(default=300, description="Maximum wait time in seconds (default: 300 = 5 minutes).")
 
@@ -176,13 +177,14 @@ qc.measure_all()
             
             # Execution using Sampler V2 with transpiled circuit
             sampler = SamplerV2(mode=backend)
-            job = sampler.run([transpiled_qc])
+            job = sampler.run([transpiled_qc], shots=input.shots)
             
             # Build initial response
             result_text += f"✅ **Circuit submitted successfully**\n\n"
             result_text += f"**Backend:** {backend.name}\n"
             result_text += f"**Type:** {backend_type}\n"
             result_text += f"**Job ID:** `{job.job_id()}`\n"
+            result_text += f"**Shots:** {input.shots}\n"
             result_text += f"**Physical qubits used:** {transpiled_qc.num_qubits}\n"
             result_text += f"**Transpiled gates:** {len(transpiled_qc.data)}\n\n"
             

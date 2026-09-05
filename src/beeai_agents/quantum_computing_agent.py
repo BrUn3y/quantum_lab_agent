@@ -7,12 +7,13 @@ This agent is a specialist in:
 - Provide detailed information on executed jobs
 - Automatic circuit transpilation
 
-Model: mistralai/mistral-small-3-1-24b-instruct-2503 (Watsonx)
+Model: configurable via COMPUTING_MODEL (Ollama/Watsonx)
 Port: 8003
 Type: AgentStack Server with A2A (ReActAgent with IBMQuantumTool)
 """
 
 import os
+import re
 from typing import Annotated
 from collections.abc import AsyncGenerator
 
@@ -26,8 +27,9 @@ from agentstack_sdk.a2a.extensions import AgentDetail, AgentDetailTool
 from agentstack_sdk.a2a.extensions import TrajectoryExtensionServer, TrajectoryExtensionSpec
 
 from beeai_framework.agents.react import ReActAgent
-from beeai_framework.backend import ChatModel
 from beeai_framework.memory import UnconstrainedMemory
+
+from .model_config import create_chat_model, explain_error, model_name, run_agent_with_retries
 
 # Import the execution tool
 from .tools import IBMQuantumTool
@@ -67,7 +69,7 @@ The Job ID is CRITICAL because quantum computers take time to respond and the us
 COMPUTING_AGENT_DETAIL = AgentDetail(
     user_greeting="⚡ Hello! I'm the Quantum Computing Agent. I execute quantum circuits on IBM Quantum simulators and real hardware, managing transpilation and providing Job IDs for tracking.",
     version="1.0.0",
-    framework="BeeAI + Watsonx + A2A",
+    framework="BeeAI + A2A (Watsonx/Ollama)",
     author={"name": "Edgar Bruney"},
     tools=[
         AgentDetailTool(
@@ -97,12 +99,47 @@ COMPUTING_AGENT_SKILLS = [
 # Crear servidor AgentStack
 server = Server()
 
+
+_QASM_FENCE_PATTERN = re.compile(r"```(?:open)?qasm\s*(OPENQASM\s+[\s\S]*?)```", re.IGNORECASE)
+_QASM_PATTERN = re.compile(r"OPENQASM\s+(?:2\.0|3\.0)\s*;[\s\S]*", re.IGNORECASE)
+_BACKEND_PATTERN = re.compile(r"\b(?:ibm|ibmq)_[a-z0-9_]+\b", re.IGNORECASE)
+_SHOTS_PATTERN = re.compile(r"\b(\d+)\s*(?:shots?|disparos?)\b", re.IGNORECASE)
+_REAL_HARDWARE_PATTERN = re.compile(
+    r"\b(real hardware|hardware real|real backend|backend real|qpu|quantum hardware|"
+    r"hardware cu[aá]ntico|computadora cu[aá]ntica|quantum computer)\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_qasm(request: str) -> str | None:
+    """Extract the QASM payload supplied by the orchestrator or user."""
+    fenced_match = _QASM_FENCE_PATTERN.search(request)
+    if fenced_match:
+        return fenced_match.group(1).strip()
+
+    qasm_match = _QASM_PATTERN.search(request)
+    if not qasm_match:
+        return None
+
+    qasm = re.split(r"\n\s*---\s*\n", qasm_match.group(0), maxsplit=1)[0]
+    return qasm.strip()
+
+
+def _execution_parameters(request: str) -> dict[str, object]:
+    """Parse execution parameters without requiring an LLM tool call."""
+    backend_match = _BACKEND_PATTERN.search(request)
+    shots_match = _SHOTS_PATTERN.search(request)
+    return {
+        "backend_name": backend_match.group(0) if backend_match else "",
+        "use_real_device": bool(_REAL_HARDWARE_PATTERN.search(request)),
+        "shots": int(shots_match.group(1)) if shots_match else 1024,
+        "wait_for_results": False,
+        "max_wait_time": 300,
+    }
+
 def create_computing_agent():
-    """Creates an instance of the Quantum Computing Agent with Mistral Small using ReActAgent"""
-    # Configure Watsonx with Mistral Small
-    llm = ChatModel.from_name(
-        f"watsonx:{os.getenv('WATSONX_COMPUTING_MODEL', 'mistralai/mistral-small-3-1-24b-instruct-2503')}"
-    )
+    """Create the Quantum Computing Agent with its configured chat model."""
+    llm = create_chat_model("COMPUTING")
     
     # Create the agent using ReActAgent
     return ReActAgent(
@@ -136,6 +173,38 @@ async def quantum_computing_agent(
         title="🔍 Analyzing execution request",
         content=f"Processing user query:\n```\n{user_query[:200]}{'...' if len(user_query) > 200 else ''}\n```"
     )
+
+    qasm_code = _extract_qasm(user_query)
+    if qasm_code:
+        parameters = _execution_parameters(user_query)
+        yield trajectory.trajectory_metadata(
+            title="⚙️ Executing validated QASM",
+            content=(
+                "Using deterministic execution parameters:\n"
+                f"- Backend: {parameters['backend_name'] or 'least busy/default'}\n"
+                f"- Real hardware: {parameters['use_real_device']}\n"
+                f"- Shots: {parameters['shots']}"
+            ),
+        )
+        try:
+            tool_output = await IBMQuantumTool().run({"qasm_code": qasm_code, **parameters})
+            response = tool_output.get_text_content()
+            succeeded = "**Job ID:**" in response
+            yield trajectory.trajectory_metadata(
+                title="✅ Job submitted" if succeeded else "❌ Execution failed",
+                content=(
+                    "IBM Quantum returned a Job ID." if succeeded
+                    else "IBM Quantum rejected the execution request; see the response for details."
+                ),
+            )
+            yield AgentMessage(text=response)
+        except Exception as e:
+            yield trajectory.trajectory_metadata(
+                title="❌ Execution failed",
+                content=f"**Type:** {type(e).__name__}\n**Message:** {explain_error(e)}",
+            )
+            yield AgentMessage(text=f"❌ Error in Computing Agent: {explain_error(e)}")
+        return
     
     # Create the agent with instructions
     agent = create_computing_agent()
@@ -143,7 +212,7 @@ async def quantum_computing_agent(
     # Step 2: Agent preparation
     yield trajectory.trajectory_metadata(
         title="🤖 Preparing execution agent",
-        content=f"**Configuration:**\n- Model: Mistral Small 3.1\n- Tool: IBM Quantum Executor\n- Memory: Unconstrained"
+        content=f"**Configuration:**\n- Model: {model_name('COMPUTING')}\n- Tool: IBM Quantum Executor\n- Memory: Unconstrained"
     )
     
     # Build the prompt with system instructions
@@ -157,7 +226,7 @@ async def quantum_computing_agent(
     
     # Execute the agent
     try:
-        run_context = await agent.run(full_prompt)
+        run_context = await run_agent_with_retries(agent, full_prompt)
         
         # Update trajectory with progress
         yield trajectory.trajectory_metadata(
@@ -204,16 +273,16 @@ async def quantum_computing_agent(
         
     except Exception as e:
         import traceback
-        error_msg = f"❌ Error in Computing Agent: {str(e)}"
+        error_msg = f"❌ Error in Computing Agent: {explain_error(e)}"
         error_details = f"\n\nError type: {type(e).__name__}\n"
-        error_details += f"Details: {str(e)}\n\n"
+        error_details += f"Details: {explain_error(e)}\n\n"
         error_details += "Traceback:\n"
         error_details += traceback.format_exc()
-        
+
         # Error trajectory
         yield trajectory.trajectory_metadata(
             title="❌ Error detected",
-            content=f"**Type:** {type(e).__name__}\n**Message:** {str(e)}\n\nCheck logs for more details."
+            content=f"**Type:** {type(e).__name__}\n**Message:** {explain_error(e)}\n\nCheck logs for more details."
         )
         
         print("=" * 80)
@@ -232,7 +301,7 @@ def run():
     print("🚀 Starting Quantum Computing Agent Server (AgentStack)")
     print("=" * 80)
     print(f"  ⚡ Agent: Quantum Computing Agent")
-    print(f"  🤖 Model: {os.getenv('WATSONX_COMPUTING_MODEL', 'mistralai/mistral-small-3-1-24b-instruct-2503')}")
+    print(f"  🤖 Model: {model_name('COMPUTING')}")
     print(f"  🌐 Host: {host}")
     print(f"  🔌 Port: {port}")
     print(f"  🛠️  Tools: 1 (IBM Quantum Executor)")

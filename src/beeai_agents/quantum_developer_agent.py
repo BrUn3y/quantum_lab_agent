@@ -9,14 +9,12 @@ This agent is a specialist in:
 - Quantum code optimization
 - Documentation of quantum algorithms
 
-Model: mistralai/mistral-large-2 (Watsonx)
+Model: configurable via DEVELOPER_MODEL (Ollama/Watsonx)
 Port: 8001
 Type: AgentStack Server with A2A (ReActAgent without tools)
 """
 
 import os
-from dotenv import load_dotenv
-load_dotenv()
 
 from typing import Annotated
 from collections.abc import AsyncGenerator
@@ -31,8 +29,9 @@ from agentstack_sdk.a2a.extensions import AgentDetail, AgentDetailTool
 from agentstack_sdk.a2a.extensions import TrajectoryExtensionServer, TrajectoryExtensionSpec
 
 from beeai_framework.agents.react import ReActAgent
-from beeai_framework.backend import ChatModel
 from beeai_framework.memory import UnconstrainedMemory
+
+from .model_config import create_chat_model, explain_error, model_name, run_agent_with_retries
 
 # Specialized instructions for the Developer Agent
 DEVELOPER_INSTRUCTIONS = """You are an Expert in Quantum Code Development and Quantum Algorithms with deep knowledge in Qiskit and OpenQASM.
@@ -315,7 +314,7 @@ REMEMBER:
 DEVELOPER_AGENT_DETAIL = AgentDetail(
     user_greeting="👨‍💻 Hello! I'm the Quantum Developer Agent. I'm an expert in generating quantum code (Qiskit/QASM), explaining quantum computing concepts, and creating classical quantum algorithms like Grover, Shor, Deutsch-Jozsa, and more.",
     version="1.0.0",
-    framework="BeeAI + Watsonx + A2A",
+    framework="BeeAI + A2A (Watsonx/Ollama)",
     author={"name": "Edgar Bruney"},
     tools=[
         AgentDetailTool(
@@ -380,11 +379,8 @@ DEVELOPER_AGENT_SKILLS = [
 server = Server()
 
 def create_developer_agent():
-    """Creates an instance of the Quantum Developer Agent with Mistral Large"""
-    # Configure Watsonx with Mistral Large
-    llm = ChatModel.from_name(
-        f"watsonx:{os.getenv('WATSONX_DEVELOPER_MODEL', 'mistral-large-2512')}"
-    )
+    """Create the Quantum Developer Agent with its configured chat model."""
+    llm = create_chat_model("DEVELOPER")
     
     # Use ReActAgent without tools (only for reasoning and code generation)
     return ReActAgent(
@@ -426,7 +422,7 @@ async def quantum_developer_agent(
     # Step 2: Agent preparation
     yield trajectory.trajectory_metadata(
         title="🤖 Preparing development agent",
-        content=f"**Configuration:**\n- Model: Mistral Large 2\n- Specialty: Quantum code generation\n- Memory: Unconstrained"
+        content=f"**Configuration:**\n- Model: {model_name('DEVELOPER')}\n- Specialty: Quantum code generation\n- Memory: Unconstrained"
     )
     
     # Build the prompt with system instructions
@@ -440,7 +436,7 @@ async def quantum_developer_agent(
     
     # Execute the agent
     try:
-        run_context = await agent.run(full_prompt)
+        run_context = await run_agent_with_retries(agent, full_prompt)
         
         # Update trajectory with progress
         yield trajectory.trajectory_metadata(
@@ -487,16 +483,16 @@ async def quantum_developer_agent(
         
     except Exception as e:
         import traceback
-        error_msg = f"❌ Error in Developer Agent: {str(e)}"
+        error_msg = f"❌ Error in Developer Agent: {explain_error(e)}"
         error_details = f"\n\nError type: {type(e).__name__}\n"
-        error_details += f"Details: {str(e)}\n\n"
+        error_details += f"Details: {explain_error(e)}\n\n"
         error_details += "Traceback:\n"
         error_details += traceback.format_exc()
-        
+
         # Error trajectory
         yield trajectory.trajectory_metadata(
             title="❌ Error detected",
-            content=f"**Type:** {type(e).__name__}\n**Message:** {str(e)}\n\nCheck logs for more details."
+            content=f"**Type:** {type(e).__name__}\n**Message:** {explain_error(e)}\n\nCheck logs for more details."
         )
         
         print("=" * 80)
@@ -515,7 +511,7 @@ def run():
     print("🚀 Starting Quantum Developer Agent Server (AgentStack)")
     print("=" * 80)
     print(f"  👨‍💻 Agent: Quantum Developer Agent")
-    print(f"  🤖 Model: {os.getenv('WATSONX_DEVELOPER_MODEL', 'mistral-large-2512')} (Watsonx)")
+    print(f"  🤖 Model: {model_name('DEVELOPER')}")
     print(f"  🌐 Host: {host}")
     print(f"  🔌 Port: {port}")
     print(f"  🛠️  Tools: 0 (Pure LLM - Code Generation)")
