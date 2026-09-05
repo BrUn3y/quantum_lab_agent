@@ -16,6 +16,7 @@ DEFAULT_WATSONX_MODELS = {
     "LAB": "mistralai/mistral-small-3-1-24b-instruct-2503",
     "STATUS": "mistralai/mistral-small-3-1-24b-instruct-2503",
     "COMPUTING": "mistralai/mistral-small-3-1-24b-instruct-2503",
+    "EXPERIMENT": "mistralai/mistral-small-3-1-24b-instruct-2503",
 }
 
 

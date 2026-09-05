@@ -40,6 +40,7 @@ from .tools import (
     QuantumDeveloperClient,
     QuantumStatusClient,
     QuantumComputingClient,
+    QuantumExperimentClient,
 )
 
 # Instructions for the Quantum Lab Agent
@@ -47,15 +48,16 @@ LAB_INSTRUCTIONS = """You are the Quantum Lab Agent, the main orchestrator of th
 
 YOUR ROLE:
 - Analyze user requests
-- Decide which specialized agent to invoke (Developer, Status, or Computing)
+- Decide which specialized agent to invoke (Developer, Status, Computing, or Experiment)
 - Coordinate communication between agents via A2A
 - Provide clear and useful responses
 
 SYSTEM ARCHITECTURE:
-The system has 4 specialized agents that communicate via A2A:
+The system has 5 agents that communicate via A2A:
 - **Developer Agent** (port 8001): Generates quantum code and explanations
 - **Status Agent** (port 8002): Queries backend and job status
 - **Computing Agent** (port 8003): Executes quantum circuits
+- **Experiment Agent** (port 8004, development): Designs and runs hybrid quantum experiments
 - **Quantum Lab Agent** (YOU, port 8000): Main orchestrator
 
 AVAILABLE TOOLS:
@@ -112,6 +114,12 @@ AVAILABLE TOOLS:
    - "Run the circuit on the simulator" → Execute 1 time
    - "Execute that code 5 times" → Execute 5 times
    - "Run on ibm_torino 3 times" → Execute 3 times
+
+4. **quantum_experiment_client** - Invoke Experiment Agent (A2A)
+   USE WHEN:
+   ✅ User requests QAOA, VQE, Max-Cut, hybrid optimization, or error mitigation
+   ✅ User asks to compare a simulator baseline with QPU hardware
+   ✅ The request requires iterative optimization and classical validation
 
 TYPICAL WORKFLOWS:
 
@@ -303,7 +311,7 @@ RESPONSE FORMAT:
 
 # Agent details for AgentStack
 LAB_AGENT_DETAIL = AgentDetail(
-    user_greeting="🔬 Hello! I'm the Quantum Lab Agent. Powered by IBM Granite, I coordinate Developer, Status, and Computing agents to design algorithms, run circuits on simulators or IBM Quantum hardware, and track quantum jobs.",
+    user_greeting="🔬 Hello! I'm the Quantum Lab Agent. Powered by IBM Granite, I coordinate Developer, Status, Computing, and Experiment agents to design algorithms, run circuits, and manage hybrid quantum studies.",
     version="1.1.0",
     framework="BeeAI + A2A + IBM Granite 4.2",
     author={"name": "Edgar Bruney"},
@@ -319,6 +327,10 @@ LAB_AGENT_DETAIL = AgentDetail(
         AgentDetailTool(
             name="Quantum Computing Client (A2A)",
             description="Invokes the Computing Agent (port 8003) to execute quantum circuits on simulators or real IBM Quantum hardware."
+        ),
+        AgentDetailTool(
+            name="Quantum Experiment Client (A2A)",
+            description="Invokes the development Experiment Agent (port 8004) for QAOA, VQE, Max-Cut, and hybrid studies."
         )
     ],
 )
@@ -341,6 +353,7 @@ LAB_AGENT_SKILLS = [
             "Which is the least busy backend?",
             "Show me the status and results of job <job-id>",
             "Show me my recent jobs",
+            "Use QAOA to solve Max-Cut on a 5-node graph using the local simulator",
         ]
     )
 ]
@@ -378,6 +391,11 @@ _CIRCUIT_OR_ALGORITHM_PATTERN = re.compile(
     r"grover(?:'s)?|deutsch[- ]jozsa|bernstein[- ]vazirani|qft|shor)\b",
     re.IGNORECASE,
 )
+_EXPERIMENT_QUERY_PATTERN = re.compile(
+    r"\b(qaoa|vqe|max[- ]?cut|maxcut|hamiltonian|hamiltoniano|hybrid experiment|"
+    r"experimento h[ií]brido|error mitigation|mitigaci[oó]n de errores|variational|variacional)\b",
+    re.IGNORECASE,
+)
 _BACKEND_TOPOLOGY_IMAGE_PATTERN = re.compile(
     r"!\[[^\]]*topology[^\]]*\]\((agentstack://[a-f0-9-]+)\)",
     re.IGNORECASE,
@@ -392,6 +410,11 @@ def _is_create_and_execute_request(request: str) -> bool:
     """Return whether a request explicitly asks to create and execute a circuit."""
     asks_for_a_circuit = _CREATE_PATTERN.search(request) or _CIRCUIT_OR_ALGORITHM_PATTERN.search(request)
     return bool(asks_for_a_circuit and _EXECUTE_PATTERN.search(request))
+
+
+def _is_experiment_query(request: str) -> bool:
+    """Return whether the development Experiment Agent should own the request."""
+    return bool(_EXPERIMENT_QUERY_PATTERN.search(request))
 
 
 def _single_job_id_query(request: str) -> str | None:
@@ -471,6 +494,31 @@ def _job_results_canvas_from_status(response: str, job_id: str) -> AgentArtifact
                     f"![Quantum job results]({image_match.group(1)})\n\n"
                     "Live measurement results retrieved from IBM Quantum for this query.\n\n"
                     f"Consulted locally: {queried_at}"
+                )
+            )
+        ],
+    )
+
+
+def _experiment_canvas_from_response(response: str) -> AgentArtifact | None:
+    """Forward an Experiment Agent dashboard into the Lab Canvas."""
+    image_match = re.search(
+        r"!\[[^\]]*(?:QAOA|experiment)[^\]]*\]\((agentstack://[a-f0-9-]+)\)",
+        response,
+        re.IGNORECASE,
+    )
+    if not image_match:
+        return None
+    generated_at = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+    return AgentArtifact(
+        name="Hybrid quantum experiment",
+        metadata={"agent": "quantum-experiment-agent", "development_status": "active"},
+        parts=[
+            TextPart(
+                text=(
+                    f"![QAOA experiment dashboard]({image_match.group(1)})\n\n"
+                    f"Generated locally: {generated_at}\n\n"
+                    "> Quantum Experiment Agent is currently in active development."
                 )
             )
         ],
@@ -614,6 +662,7 @@ Final Answer: Here are the 7 available backends: ibm_kyiv, ibm_brisbane, ibm_osa
             QuantumDeveloperClient(),
             QuantumStatusClient(),
             QuantumComputingClient(),
+            QuantumExperimentClient(),
         ],
         memory=TokenMemory(max_tokens=6000),
         templates={"system": custom_system_template},  # Custom template
@@ -668,6 +717,37 @@ async def quantum_lab_agent(
         title="🔍 Analyzing request",
         content=f"Processing user query:\n```\n{user_query[:200]}{'...' if len(user_query) > 200 else ''}\n```\n\n**Context:** {len(history)} messages in history"
     )
+
+    # Iterative and hybrid studies belong to the Experiment Agent. Keep this
+    # before the generic create-and-execute route so QAOA/VQE requests are not
+    # reduced to a single generated circuit.
+    if _is_experiment_query(user_query):
+        yield trajectory.trajectory_metadata(
+            title="🧪 Routing hybrid experiment",
+            content="Invoking the Quantum Experiment Agent on port 8004...",
+        )
+        try:
+            experiment_output = await asyncio.wait_for(
+                QuantumExperimentClient().run({"request": user_query}),
+                timeout=600,
+            )
+            experiment_response = experiment_output.get_text_content()
+            artifact = _experiment_canvas_from_response(experiment_response)
+            if artifact:
+                yield artifact
+                try:
+                    await context.store(artifact)
+                except Exception as store_error:
+                    print(f"⚠️ [Canvas] Could not store experiment artifact: {explain_error(store_error)}")
+            response_message = AgentMessage(text=experiment_response)
+            yield response_message
+            try:
+                await context.store(response_message)
+            except Exception:
+                pass
+        except Exception as error:
+            yield AgentMessage(text=f"❌ Could not complete the hybrid experiment: {explain_error(error)}")
+        return
 
     # Creating and executing requires two dependent tool calls. Route this
     # workflow deterministically so a model cannot lose the generated QASM,
@@ -937,17 +1017,19 @@ def run():
     print(f"  🤖 Model: {model_name('LAB')}")
     print(f"  🌐 Host: {host}")
     print(f"  🔌 Port: {port}")
-    print(f"  🛠️  Tools: 3 (Developer Client A2A, Status Client A2A, Computing Client A2A)")
+    print(f"  🛠️  Tools: 4 (Developer, Status, Computing, Experiment A2A clients)")
     print(f"  📚 History: Persistent storage enabled (PlatformContextStore)")
     print(f"  🎯 Trajectory: Visualization enabled")
     print(f"  🔗 Developer Agent: http://{os.getenv('DEVELOPER_HOST', '127.0.0.1')}:{os.getenv('DEVELOPER_PORT', '8001')}")
     print(f"  🔗 Status Agent: http://{os.getenv('STATUS_HOST', '127.0.0.1')}:{os.getenv('STATUS_PORT', '8002')}")
     print(f"  🔗 Computing Agent: http://{os.getenv('COMPUTING_HOST', '127.0.0.1')}:{os.getenv('COMPUTING_PORT', '8003')}")
+    print(f"  🔗 Experiment Agent: http://{os.getenv('EXPERIMENT_HOST', '127.0.0.1')}:{os.getenv('EXPERIMENT_PORT', '8004')}")
     print("=" * 80)
-    print("\n💡 Tip: Make sure the 3 specialized agents are running:")
+    print("\n💡 Tip: Make sure the 4 specialized agents are running:")
     print("   - Developer Agent (8001)")
     print("   - Status Agent (8002)")
     print("   - Computing Agent (8003)")
+    print("   - Experiment Agent (8004, development)")
     print("=" * 80)
     
     # Enable persistent conversation storage

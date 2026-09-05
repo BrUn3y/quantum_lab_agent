@@ -18,6 +18,7 @@ Agents:
   developer    Developer Agent, port 8001
   status       Status Agent, port 8002
   computing    Computing Agent, port 8003
+  experiment   Experiment Agent, port 8004 (development)
 
 Options:
   -n, --lines NUMBER  Initial number of lines to show (default: 100)
@@ -34,7 +35,7 @@ EOF
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        all|lab|developer|status|computing)
+        all|lab|developer|status|computing|experiment)
             AGENT="$1"
             shift
             ;;
@@ -67,11 +68,13 @@ case "$AGENT" in
     developer) requested_files=("$LOG_DIR/developer.log") ;;
     status) requested_files=("$LOG_DIR/status.log") ;;
     computing) requested_files=("$LOG_DIR/computing.log") ;;
+    experiment) requested_files=("$LOG_DIR/experiment.log") ;;
     all) requested_files=(
         "$LOG_DIR/lab.log"
         "$LOG_DIR/developer.log"
         "$LOG_DIR/status.log"
         "$LOG_DIR/computing.log"
+        "$LOG_DIR/experiment.log"
     ) ;;
 esac
 

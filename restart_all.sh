@@ -7,6 +7,7 @@
 DEVELOPER_PORT="${DEVELOPER_PORT:-8001}"
 STATUS_PORT="${STATUS_PORT:-8002}"
 COMPUTING_PORT="${COMPUTING_PORT:-8003}"
+EXPERIMENT_PORT="${EXPERIMENT_PORT:-8004}"
 LAB_PORT="${LAB_PORT:-8000}"
 
 echo "=========================================="
@@ -46,11 +47,12 @@ echo "🔍 Stopping existing agents..."
 kill_port "$DEVELOPER_PORT" "Developer Agent"
 kill_port "$STATUS_PORT" "Status Agent"
 kill_port "$COMPUTING_PORT" "Computing Agent"
+kill_port "$EXPERIMENT_PORT" "Experiment Agent"
 kill_port "$LAB_PORT" "Lab Agent"
 
 # Fallback: catch any agent process that isn't bound to its port yet
 # (e.g. it crashed mid-startup, before opening the listening socket).
-for module in quantum_developer_agent quantum_status_agent quantum_computing_agent quantum_lab_agent; do
+for module in quantum_developer_agent quantum_status_agent quantum_computing_agent quantum_experiment_agent quantum_lab_agent; do
     pkill -f "beeai_agents.$module" 2>/dev/null
 done
 

@@ -20,12 +20,12 @@ hardware, and retrieve job results through one coordinated interface.
 
 ## Overview
 
-This repository contains the complete four-agent system. The **Quantum Lab Agent** is the main entry point: it understands each request and coordinates the Developer, Status, and Computing agents through the Agent-to-Agent protocol.
+This repository contains the complete multi-agent system. The **Quantum Lab Agent** is the main entry point: it coordinates the Developer, Status, Computing, and development-stage Experiment agents through the Agent-to-Agent protocol.
 
 Local inference uses **IBM Granite 4.2 8B** through Ollama by default.
 
 > [!IMPORTANT]
-> Full functionality requires all four agents to be running. Start the three specialized agents before the Lab Agent, or simply use `./start_all.sh`.
+> Full functionality requires all five agents to be running. Start the four specialized agents before the Lab Agent, or simply use `./start_all.sh`.
 
 | Agent | Responsibility | Port | Public repository |
 |---|---|:---:|---|
@@ -33,6 +33,7 @@ Local inference uses **IBM Granite 4.2 8B** through Ollama by default.
 | 💻 **Quantum Developer Agent** | Code generation specialist | `8001` | [quantum-developer-agent](https://github.com/BrUn3y/quantum-developer-agent) |
 | 📊 **Quantum Status Agent** | Status monitoring specialist | `8002` | [quantum-status-agent](https://github.com/BrUn3y/quantum-status-agent) |
 | ⚡ **Quantum Computing Agent** | Circuit execution specialist | `8003` | [quantum-computing-agent](https://github.com/BrUn3y/quantum-computing-agent) |
+| 🧪 **Quantum Experiment Agent (Development)** | Hybrid experiment and optimization specialist | `8004` | [quantum-experiment-agent](https://github.com/BrUn3y/quantum-experiment-agent) |
 
 ## 🎬 Demo
 
@@ -55,7 +56,8 @@ User request
 Lab Agent :8000
      ├── Developer :8001 ── Generate QASM and explain concepts
      ├── Status    :8002 ── Inspect backends and quantum jobs
-     └── Computing :8003 ── Execute circuits ──► IBM Quantum
+     ├── Computing :8003 ── Execute circuits ──► IBM Quantum
+     └── Experiment:8004 ── Optimize QAOA/VQE studies ──► Computing
 ```
 
 The Lab Agent combines the specialized responses into a single answer containing the generated circuit, selected backend, IBM Quantum Job ID, status, or measurement results.
@@ -71,6 +73,7 @@ The Lab Agent combines the specialized responses into a single answer containing
 | 🗺️ **Backend Canvas** | Shows a live topology and health dashboard for specific `ibm_*` backend queries |
 | 📈 **Execution Canvas** | Presents fresh job results, readable multi-row circuits, QASM, and local query timestamps |
 | 🔄 **Multi-agent workflows** | Chains generation → execution → result inspection |
+| 🧪 **Hybrid experiments** | Runs QAOA Max-Cut optimization, exact validation, Canvas analysis, and optional QPU evaluation *(development)* |
 | 🧠 **Local inference** | Runs IBM Granite 4.2 8B through Ollama |
 
 ## 🚀 Quick start
@@ -123,6 +126,7 @@ Or start each service in a separate terminal:
 ./start_developer.sh  # Port 8001
 ./start_status.sh     # Port 8002
 ./start_computing.sh  # Port 8003
+./start_experiment.sh # Port 8004 — development
 ./start_lab.sh        # Port 8000 — start last
 ```
 
@@ -186,6 +190,7 @@ curl -X POST http://127.0.0.1:8000/jsonrpc/ \
 | List available QPUs | `What quantum computers are available?` |
 | Inspect a backend | `Give me detailed information about ibm_fez` |
 | Deutsch–Jozsa | `Create and execute a Deutsch-Jozsa circuit for a balanced oracle` |
+| QAOA Max-Cut *(development)* | `Use QAOA to solve Max-Cut on a 5-node graph using the local simulator` |
 | Explain a concept | `Explain what quantum entanglement is` |
 | Check a job | `Show me the status and results of job <job-id>` |
 
@@ -224,6 +229,7 @@ Custom `--lab-port`, `--developer-port`, `--status-port`, and `--computing-port`
 | `DEVELOPER_PORT` | `8001` | Developer Agent port |
 | `STATUS_PORT` | `8002` | Status Agent port |
 | `COMPUTING_PORT` | `8003` | Computing Agent port |
+| `EXPERIMENT_PORT` | `8004` | Experiment Agent port *(development)* |
 
 ## 🔁 How requests are handled
 
@@ -234,6 +240,7 @@ Custom `--lab-port`, `--developer-port`, `--status-port`, and `--computing-port`
 | “Which backends are available?” | Status |
 | “Check job `…` and show its results” | Status |
 | “Create, execute, and inspect the result” | Developer → Computing → Status |
+| “Use QAOA to solve a 5-node Max-Cut problem” | Experiment → Computing *(when QPU execution is requested)* |
 
 ## 🐳 Docker
 
@@ -286,6 +293,7 @@ quantum_lab_agent/
 | [Quantum Status Agent](https://github.com/BrUn3y/quantum-status-agent) | Status monitoring and job tracking |
 | [Quantum Developer Agent](https://github.com/BrUn3y/quantum-developer-agent) | Code generation and algorithm implementation |
 | [Quantum Lab Agent](https://github.com/BrUn3y/quantum_lab_agent) | Main orchestrator coordinating all agents |
+| [Quantum Experiment Agent](https://github.com/BrUn3y/quantum-experiment-agent) | Hybrid optimization and experiment analysis *(in development)* |
 
 ## Contributing
 

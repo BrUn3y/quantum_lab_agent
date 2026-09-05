@@ -16,6 +16,7 @@ A2A COMMUNICATION TOOLS:
 - QuantumDeveloperClient: Client to invoke the Developer Agent
 - QuantumStatusClient: Client to invoke the Status Agent
 - QuantumComputingClient: Client to invoke the Computing Agent
+- QuantumExperimentClient: Client to invoke the Experiment Agent
 """
 
 from .quantum_tool import IBMQuantumTool
@@ -26,6 +27,7 @@ from .quantum_job_comparison_tool import IBMQuantumJobComparisonTool
 from .quantum_developer_client import QuantumDeveloperClient
 from .quantum_status_client import QuantumStatusClient
 from .quantum_computing_client import QuantumComputingClient
+from .quantum_experiment_client import QuantumExperimentClient
 
 __all__ = [
     "IBMQuantumTool",
@@ -36,4 +38,5 @@ __all__ = [
     "QuantumDeveloperClient",
     "QuantumStatusClient",
     "QuantumComputingClient",
+    "QuantumExperimentClient",
 ]

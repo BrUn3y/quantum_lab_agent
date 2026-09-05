@@ -8,15 +8,18 @@ mkdir -p "$LOG_DIR"
 export DEVELOPER_MODEL="${DEVELOPER_MODEL:-ollama:granite4.2:8b}"
 export STATUS_MODEL="${STATUS_MODEL:-ollama:granite4.2:8b}"
 export COMPUTING_MODEL="${COMPUTING_MODEL:-ollama:granite4.2:8b}"
+export EXPERIMENT_MODEL="${EXPERIMENT_MODEL:-ollama:granite4.2:8b}"
 export LAB_MODEL="${LAB_MODEL:-ollama:granite4.2:8b}"
 
 DEVELOPER_LOG="$LOG_DIR/developer.log"
 STATUS_LOG="$LOG_DIR/status.log"
 COMPUTING_LOG="$LOG_DIR/computing.log"
+EXPERIMENT_LOG="$LOG_DIR/experiment.log"
 LAB_LOG="$LOG_DIR/lab.log"
 : > "$DEVELOPER_LOG"
 : > "$STATUS_LOG"
 : > "$COMPUTING_LOG"
+: > "$EXPERIMENT_LOG"
 : > "$LAB_LOG"
 
 echo "=========================================="
@@ -27,6 +30,7 @@ echo "📋 System Architecture:"
 echo "  🔹 Developer Agent (Port 8001) - Code Generation"
 echo "  🔹 Status Agent (Port 8002) - Status Queries"
 echo "  🔹 Computing Agent (Port 8003) - Circuit Execution"
+echo "  🔹 Experiment Agent (Port 8004) - Hybrid Experiments (Development)"
 echo "  🔹 Lab Agent (Port 8000) - Orchestrator"
 echo ""
 echo "=========================================="
@@ -47,6 +51,7 @@ PORTS_AVAILABLE=true
 check_port 8001 || PORTS_AVAILABLE=false
 check_port 8002 || PORTS_AVAILABLE=false
 check_port 8003 || PORTS_AVAILABLE=false
+check_port 8004 || PORTS_AVAILABLE=false
 check_port 8000 || PORTS_AVAILABLE=false
 echo ""
 
@@ -86,6 +91,16 @@ echo ""
 # Wait for Computing to start
 sleep 3
 
+# Start Experiment Agent (port 8004)
+echo "🧪 Starting Experiment Agent on port 8004..."
+PYTHONUNBUFFERED=1 uv run python -m beeai_agents.quantum_experiment_agent > >(tee -a "$EXPERIMENT_LOG") 2>&1 &
+EXPERIMENT_PID=$!
+echo "   ✅ Experiment Agent started (PID: $EXPERIMENT_PID)"
+echo ""
+
+# Wait for Experiment to start
+sleep 3
+
 # Start Lab Agent (port 8000)
 echo "🚀 Starting Lab Agent on port 8000..."
 PYTHONUNBUFFERED=1 uv run python -m beeai_agents.quantum_lab_agent > >(tee -a "$LAB_LOG") 2>&1 &
@@ -116,6 +131,12 @@ echo "     - URL: http://127.0.0.1:8003"
 echo "     - Model: $COMPUTING_MODEL"
 echo "     - Role: Circuit Execution"
 echo ""
+echo "  🔹 Experiment Agent (Development):"
+echo "     - PID: $EXPERIMENT_PID"
+echo "     - URL: http://127.0.0.1:8004"
+echo "     - Model: $EXPERIMENT_MODEL"
+echo "     - Role: Hybrid Optimization & Validation"
+echo ""
 echo "  🔹 Lab Agent:"
 echo "     - PID: $LAB_PID"
 echo "     - URL: http://127.0.0.1:8000"
@@ -126,12 +147,12 @@ echo "=========================================="
 echo ""
 echo "💡 Tips:"
 echo "  - Use Lab Agent (port 8000) as main entry point"
-echo "  - Developer, Status, and Computing agents are invoked automatically via A2A"
+echo "  - Developer, Status, Computing, and Experiment agents are invoked automatically via A2A"
 echo "  - View all logs with: ./view_logs.sh"
 echo "  - Press Ctrl+C to stop all agents"
 echo ""
 echo "🛑 To stop all agents, run:"
-echo "   kill $DEVELOPER_PID $STATUS_PID $COMPUTING_PID $LAB_PID"
+echo "   kill $DEVELOPER_PID $STATUS_PID $COMPUTING_PID $EXPERIMENT_PID $LAB_PID"
 echo ""
 echo "=========================================="
 
