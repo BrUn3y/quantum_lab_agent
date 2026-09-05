@@ -13,6 +13,7 @@ dependencies = [
     "matplotlib>=3.7.0",
     "rustworkx>=0.15.0",
     "python-dotenv>=1.0.0",
+    "mcp<2",
 ]
 
 [tool.ruff]

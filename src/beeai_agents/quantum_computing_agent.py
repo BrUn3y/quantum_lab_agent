@@ -120,6 +120,7 @@ _SIMULATOR_NEGATION_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _EXECUTION_TAG_PATTERNS = (
+    (re.compile(r"\b(qaoa|max[- ]?cut|maxcut)\b", re.IGNORECASE), "qaoa-maxcut"),
     (re.compile(r"\b(bell(?:\s+state)?|estado\s+de\s+bell)\b", re.IGNORECASE), "bell-state"),
     (re.compile(r"\bgrover(?:'s)?\b", re.IGNORECASE), "grover-search"),
     (re.compile(r"\bdeutsch[- ]?jozsa\b", re.IGNORECASE), "deutsch-jozsa"),

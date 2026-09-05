@@ -118,6 +118,10 @@ class ExecutionTests(unittest.IsolatedAsyncioTestCase):
         parameters = _execution_parameters("Run Grover without a simulator")
         self.assertTrue(parameters["use_real_device"])
 
+    def test_qaoa_maxcut_job_tag(self):
+        parameters = _execution_parameters("Execute this optimized QAOA Max-Cut circuit")
+        self.assertEqual(parameters["job_tags"], ["quantum-lab", "qaoa-maxcut"])
+
     async def test_local_simulator_returns_results_and_tags(self):
         generated = _basic_algorithm_qasm("Create a Bell state circuit")
         output = await IBMQuantumTool().run(
