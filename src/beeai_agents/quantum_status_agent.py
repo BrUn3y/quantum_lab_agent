@@ -18,15 +18,17 @@ import tempfile
 import time
 from typing import Annotated
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
-from a2a.types import AgentSkill, Message
+from a2a.types import AgentSkill, Message, TextPart
 from a2a.utils.message import get_message_text
 from agentstack_sdk.server import Server
 from agentstack_sdk.server.context import RunContext
 from agentstack_sdk.server.store.platform_context_store import PlatformContextStore
-from agentstack_sdk.a2a.types import AgentMessage
+from agentstack_sdk.a2a.types import AgentArtifact, AgentMessage
 from agentstack_sdk.a2a.extensions import AgentDetail, AgentDetailTool
 from agentstack_sdk.a2a.extensions import TrajectoryExtensionServer, TrajectoryExtensionSpec
+from agentstack_sdk.a2a.extensions.ui.canvas import CanvasExtensionServer, CanvasExtensionSpec
 from agentstack_sdk.platform.file import File
 
 from beeai_framework.agents.react import ReActAgent
@@ -35,6 +37,7 @@ from beeai_framework.memory import UnconstrainedMemory
 from beeai_framework.template import PromptTemplate
 
 from .model_config import create_chat_model, explain_error, model_name, run_agent_with_retries
+from .backend_visualization import BACKEND_CANVAS_MARKER
 
 # Import query tools
 from .tools import (
@@ -423,6 +426,50 @@ async def _upload_png_and_replace(text: str) -> str:
     return result
 
 
+async def _create_backend_canvas(text: str, backend_name: str) -> tuple[str, AgentArtifact | None]:
+    """Upload a generated backend dashboard and prepare its Canvas artifact."""
+    match = BACKEND_CANVAS_MARKER.search(text)
+    clean_text = BACKEND_CANVAS_MARKER.sub("", text).rstrip()
+    if not match:
+        return clean_text, None
+
+    dashboard_path = Path(match.group(1).strip()).resolve()
+    allowed_directory = (Path(tempfile.gettempdir()) / "quantum_lab_pngs").resolve()
+    if dashboard_path.parent != allowed_directory or not dashboard_path.is_file():
+        return clean_text + "\n\n⚠️ The topology image could not be loaded safely.", None
+
+    try:
+        uploaded = await File.create(
+            filename=f"{backend_name}_topology.png",
+            content=dashboard_path.read_bytes(),
+            content_type="image/png",
+        )
+        artifact = AgentArtifact(
+            name=f"{backend_name} topology and status",
+            description=f"Live IBM Quantum topology and health summary for {backend_name}.",
+            metadata={"backend": backend_name, "content_type": "text/markdown"},
+            parts=[
+                TextPart(
+                    text=(
+                        f"# {backend_name}: topology and status\n\n"
+                        f"![{backend_name} topology](agentstack://{uploaded.id})\n\n"
+                        "Live data from IBM Quantum. Node color represents readout assignment error."
+                    )
+                )
+            ],
+        )
+        clean_text += (
+            "\n\n## 🗺️ Visual topology and health summary\n\n"
+            f"![{backend_name} topology](agentstack://{uploaded.id})\n\n"
+            "The dashboard is also available in Canvas."
+        )
+        return clean_text, artifact
+    except Exception as error:
+        return clean_text + f"\n\n⚠️ Canvas upload failed: {explain_error(error)}", None
+    finally:
+        dashboard_path.unlink(missing_ok=True)
+
+
 # Create AgentStack server
 server = Server()
 
@@ -524,12 +571,14 @@ Final Answer: 🔬 **Available Quantum Computers on IBM Quantum**
 @server.agent(
     name="Quantum Status Agent",
     detail=STATUS_AGENT_DETAIL,
-    skills=STATUS_AGENT_SKILLS
+    skills=STATUS_AGENT_SKILLS,
+    default_output_modes=["text/plain", "image/png"],
 )
 async def quantum_status_agent(
     input: Message,
     context: RunContext,
-    trajectory: Annotated[TrajectoryExtensionServer, TrajectoryExtensionSpec()]
+    trajectory: Annotated[TrajectoryExtensionServer, TrajectoryExtensionSpec()],
+    _canvas: Annotated[CanvasExtensionServer, CanvasExtensionSpec()],
 ):
     """
     Main handler for the Quantum Status Agent.
@@ -583,7 +632,18 @@ async def quantum_status_agent(
         )
         try:
             tool_output = await IBMQuantumInfoTool().run({"backend_name": backend_name})
-            yield AgentMessage(text=tool_output.get_text_content())
+            response, artifact = await _create_backend_canvas(tool_output.get_text_content(), backend_name)
+            if artifact:
+                yield trajectory.trajectory_metadata(
+                    title="🗺️ Backend Canvas ready",
+                    content="Generated a live topology map and backend health dashboard.",
+                )
+                yield artifact
+                try:
+                    await context.store(artifact)
+                except Exception as store_error:
+                    print(f"⚠️ [Canvas] Could not store artifact history: {explain_error(store_error)}")
+            yield AgentMessage(text=response)
         except Exception as e:
             yield AgentMessage(text=f"❌ Error querying backend: {explain_error(e)}")
         return

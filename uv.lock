@@ -230,6 +230,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "qiskit" },
     { name = "qiskit-ibm-runtime" },
+    { name = "rustworkx" },
 ]
 
 [package.metadata]
@@ -240,6 +241,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "qiskit", specifier = ">=1.0.0" },
     { name = "qiskit-ibm-runtime", specifier = ">=0.20.0" },
+    { name = "rustworkx", specifier = ">=0.15.0" },
 ]
 
 [[package]]

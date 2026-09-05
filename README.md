@@ -60,6 +60,7 @@ The Lab Agent combines the specialized responses into a single answer containing
 | 💻 **Code generation** | Produces OpenQASM, Qiskit code, and common quantum algorithms |
 | ⚡ **Real execution** | Submits circuits to accessible IBM Quantum hardware |
 | 📊 **Live monitoring** | Retrieves backend availability, queues, job state, and results |
+| 🗺️ **Backend Canvas** | Shows a live topology and health dashboard for specific `ibm_*` backend queries |
 | 🔄 **Multi-agent workflows** | Chains generation → execution → result inspection |
 | 🧠 **Local inference** | Runs IBM Granite 4.2 8B through Ollama |
 

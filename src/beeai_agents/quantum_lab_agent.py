@@ -19,14 +19,15 @@ import re
 from typing import Annotated
 from collections.abc import AsyncGenerator
 
-from a2a.types import AgentSkill, Message
+from a2a.types import AgentSkill, Message, TextPart
 from a2a.utils.message import get_message_text
 from agentstack_sdk.server import Server
 from agentstack_sdk.server.context import RunContext
 from agentstack_sdk.server.store.platform_context_store import PlatformContextStore
-from agentstack_sdk.a2a.types import AgentMessage
+from agentstack_sdk.a2a.types import AgentArtifact, AgentMessage
 from agentstack_sdk.a2a.extensions import AgentDetail, AgentDetailTool
 from agentstack_sdk.a2a.extensions import TrajectoryExtensionServer, TrajectoryExtensionSpec
+from agentstack_sdk.a2a.extensions.ui.canvas import CanvasExtensionServer, CanvasExtensionSpec
 
 from beeai_framework.agents.react import ReActAgent
 from beeai_framework.memory import TokenMemory
@@ -370,6 +371,10 @@ _EXPLANATION_PATTERN = re.compile(
     r"describe\w*|qu[eé] (?:es|son)|c[oó]mo funciona\w*)\b",
     re.IGNORECASE,
 )
+_BACKEND_TOPOLOGY_IMAGE_PATTERN = re.compile(
+    r"!\[[^\]]*topology[^\]]*\]\((agentstack://[a-f0-9-]+)\)",
+    re.IGNORECASE,
+)
 
 
 def _is_create_and_execute_request(request: str) -> bool:
@@ -391,6 +396,26 @@ def _is_status_query(request: str) -> bool:
 def _is_explanation_query(request: str) -> bool:
     """Return whether the request asks the Developer Agent for an explanation."""
     return bool(_EXPLANATION_PATTERN.search(request))
+
+
+def _backend_canvas_from_status(response: str, backend_name: str) -> AgentArtifact | None:
+    """Forward the Status Agent's topology image into the Lab Agent Canvas."""
+    image_match = _BACKEND_TOPOLOGY_IMAGE_PATTERN.search(response)
+    if not image_match:
+        return None
+    return AgentArtifact(
+        name=f"{backend_name} topology and status",
+        metadata={"backend": backend_name, "content_type": "text/markdown"},
+        parts=[
+            TextPart(
+                text=(
+                    f"# {backend_name}: topology and status\n\n"
+                    f"![{backend_name} topology]({image_match.group(1)})\n\n"
+                    "Live data from IBM Quantum. Node color represents readout assignment error."
+                )
+            )
+        ],
+    )
 
 
 def _extract_qasm(response: str) -> str | None:
@@ -538,12 +563,14 @@ Final Answer: Here are the 7 available backends: ibm_kyiv, ibm_brisbane, ibm_osa
 @server.agent(
     name="Quantum Lab Agent",
     detail=LAB_AGENT_DETAIL,
-    skills=LAB_AGENT_SKILLS
+    skills=LAB_AGENT_SKILLS,
+    default_output_modes=["text/plain", "image/png"],
 )
 async def quantum_lab_agent(
     input: Message,
     context: RunContext,
-    trajectory: Annotated[TrajectoryExtensionServer, TrajectoryExtensionSpec()]
+    trajectory: Annotated[TrajectoryExtensionServer, TrajectoryExtensionSpec()],
+    _canvas: Annotated[CanvasExtensionServer, CanvasExtensionSpec()],
 ):
     """
     Main handler for the Quantum Lab Agent.
@@ -675,7 +702,17 @@ async def quantum_lab_agent(
                 QuantumStatusClient().run({"query": user_query}),
                 timeout=180,
             )
-            response_message = AgentMessage(text=status_output.get_text_content())
+            status_response = status_output.get_text_content()
+            backend_names = list(dict.fromkeys(_BACKEND_NAME_PATTERN.findall(user_query)))
+            if len(backend_names) == 1:
+                artifact = _backend_canvas_from_status(status_response, backend_names[0].lower())
+                if artifact:
+                    yield artifact
+                    try:
+                        await context.store(artifact)
+                    except Exception as store_error:
+                        print(f"⚠️ [Canvas] Could not store artifact history: {explain_error(store_error)}")
+            response_message = AgentMessage(text=status_response)
             yield response_message
             try:
                 await context.store(response_message)
