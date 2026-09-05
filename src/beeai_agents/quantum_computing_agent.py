@@ -110,12 +110,13 @@ _QASM_FENCE_PATTERN = re.compile(r"```(?:open)?qasm\s*(OPENQASM\s+[\s\S]*?)```",
 _QASM_PATTERN = re.compile(r"OPENQASM\s+(?:2\.0|3\.0)\s*;[\s\S]*", re.IGNORECASE)
 _BACKEND_PATTERN = re.compile(r"\b(?:ibm|ibmq)_[a-z0-9_]+\b", re.IGNORECASE)
 _SHOTS_PATTERN = re.compile(r"\b(\d+)\s*(?:shots?|disparos?)\b", re.IGNORECASE)
-_REAL_HARDWARE_PATTERN = re.compile(
-    r"\b(real hardware|hardware real|real backend|backend real|"
-    r"real\s+(?:ibm\s+)?quantum\s+(?:backend|hardware|computer)|"
-    r"least\s+busy\s+(?:operational\s+)?real\s+(?:ibm\s+)?quantum\s+backend|"
-    r"qpu|quantum hardware|"
-    r"hardware cu[aá]ntico|computadora cu[aá]ntica|quantum computer)\b",
+_SIMULATOR_PATTERN = re.compile(
+    r"\b(local\s+simulator|simulat(?:e|ed|ion|or)|simulador|simulaci[oó]n|simular|simulad[oa])\b",
+    re.IGNORECASE,
+)
+_SIMULATOR_NEGATION_PATTERN = re.compile(
+    r"\b(?:no|not|without|sin)\s+(?:a\s+|the\s+|el\s+|un\s+)?"
+    r"(?:simulator|simulation|simulador|simulaci[oó]n)\b",
     re.IGNORECASE,
 )
 _EXECUTION_TAG_PATTERNS = (
@@ -151,16 +152,19 @@ def _execution_parameters(request: str) -> dict[str, object]:
     backend_match = _BACKEND_PATTERN.search(request_scope)
     shots_match = _SHOTS_PATTERN.search(request_scope)
     backend_name = backend_match.group(0) if backend_match else ""
+    simulator_requested = bool(_SIMULATOR_PATTERN.search(request_scope)) and not bool(
+        _SIMULATOR_NEGATION_PATTERN.search(request_scope)
+    )
+    named_simulator = bool(backend_name and "simulator" in backend_name.lower())
     execution_tag = next(
         (tag for pattern, tag in _EXECUTION_TAG_PATTERNS if pattern.search(request_scope)),
         "quantum-circuit",
     )
     return {
         "backend_name": backend_name,
-        "use_real_device": bool(
-            _REAL_HARDWARE_PATTERN.search(request_scope)
-            or (backend_name and "simulator" not in backend_name.lower())
-        ),
+        # Every execution creates a fresh QPU job by default. A local simulator
+        # is used only when the original user request explicitly asks for one.
+        "use_real_device": not (simulator_requested or named_simulator),
         "shots": int(shots_match.group(1)) if shots_match else 1024,
         "wait_for_results": False,
         "max_wait_time": 300,

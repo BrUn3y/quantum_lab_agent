@@ -98,6 +98,26 @@ class ExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(parameters["use_real_device"])
         self.assertEqual(parameters["backend_name"], "")
 
+    def test_quantum_machine_in_spanish_defaults_to_real_hardware(self):
+        parameters = _execution_parameters(
+            "dame un ejemplo del algoritmo de grover y ejecuto en una maquina cuantica"
+        )
+        self.assertTrue(parameters["use_real_device"])
+        self.assertEqual(parameters["backend_name"], "")
+        self.assertEqual(parameters["job_tags"], ["quantum-lab", "grover-search"])
+
+    def test_execution_without_backend_defaults_to_real_hardware(self):
+        parameters = _execution_parameters("Execute this Grover circuit")
+        self.assertTrue(parameters["use_real_device"])
+
+    def test_explicit_spanish_simulation_uses_local_simulator(self):
+        parameters = _execution_parameters("Ejecuta Grover en el simulador local")
+        self.assertFalse(parameters["use_real_device"])
+
+    def test_negated_simulator_request_uses_real_hardware(self):
+        parameters = _execution_parameters("Run Grover without a simulator")
+        self.assertTrue(parameters["use_real_device"])
+
     async def test_local_simulator_returns_results_and_tags(self):
         generated = _basic_algorithm_qasm("Create a Bell state circuit")
         output = await IBMQuantumTool().run(
