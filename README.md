@@ -178,6 +178,26 @@ curl -X POST http://127.0.0.1:8000/jsonrpc/ \
 
 Backend availability depends on the IBM Quantum account. The agent queries the live service and chooses among the backends actually accessible to the configured account.
 
+## 🧪 End-to-end tests
+
+Run the live suite to verify the four services and execute Bell, CX, Grover, and Deutsch–Jozsa circuits through the complete Lab → Developer → Computing flow:
+
+```bash
+./test_e2e.sh
+```
+
+The suite uses the agents already running on ports `8000`–`8003`. If none are running, it starts all four with `granite4.2:8b`, waits for their agent cards, runs every circuit on the local statevector simulator, and stops only the processes it started. Logs from an automatic startup are written to `.logs/e2e/`.
+
+Useful options:
+
+```bash
+./test_e2e.sh --no-start        # Require an existing four-agent system
+./test_e2e.sh --shots 256       # Change the number of simulator shots
+./test_e2e.sh --timeout 300     # Allow slower local environments
+```
+
+Custom `--lab-port`, `--developer-port`, `--status-port`, and `--computing-port` options are available for isolated or parallel test environments.
+
 ## ⚙️ Configuration
 
 | Variable | Default | Purpose |
