@@ -57,19 +57,33 @@ Run the QAOA Max-Cut experiment on a 5-node graph and execute the optimized circ
 
 ## 🏗️ Architecture
 
-<p align="center">
-  <img src="docs/images/architecture.png" alt="Quantum Lab Agent architecture showing BeeAI orchestration, Qiskit services, and IBM Quantum Platform" width="960">
-</p>
-
 ```text
-User request
-     │
-     ▼
-Lab Agent :8000
-     ├── Developer :8001 ── Generate QASM and explain concepts
-     ├── Status    :8002 ── Inspect backends and quantum jobs
-     ├── Computing :8003 ── Execute circuits ──► IBM Quantum
-     └── Experiment:8004 ── Optimize QAOA/VQE studies ──► Computing
+                                  User
+                                    │
+                             request / response
+                                    │
+                                    ▼
+                    ┌─────────────────────────────┐
+                    │ Quantum Lab Agent     :8000 │
+                    │ BeeAI orchestration         │
+                    │ IBM Granite 4.2             │
+                    └──────────────┬──────────────┘
+                                   │
+                                   ├── A2A ──► Developer Agent  :8001
+                                   │           QASM and Qiskit code
+                                   │
+                                   ├── A2A ──► Status Agent     :8002
+                                   │           Backends and jobs
+                                   │
+                                   ├── A2A ──► Computing Agent  :8003 ◄────────────┐
+                                   │           Fresh quantum jobs                 │
+                                   │                                               │
+                                   └── A2A ──► Experiment Agent :8004 ─────────────┘
+                                               QAOA/VQE · development    delegates execution
+
+                  Status Agent ─────── Qiskit ───────┐
+                                                     ├──► IBM Quantum Platform
+                  Computing Agent ───── Qiskit ──────┘    Live backends and real QPUs
 ```
 
 The Lab Agent combines the specialized responses into a single answer containing the generated circuit, selected backend, IBM Quantum Job ID, status, or measurement results.
@@ -279,8 +293,6 @@ The Developer, Status, Computing, and Experiment agents must remain reachable th
 
 ```text
 quantum_lab_agent/
-├── docs/images/architecture.png
-├── docs/images/architecture.svg
 ├── docs/images/quantum-lab-demo.gif
 ├── docs/images/quantum-experiment-real-hardware.gif
 ├── src/beeai_agents/
