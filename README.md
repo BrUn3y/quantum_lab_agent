@@ -57,33 +57,30 @@ Run the QAOA Max-Cut experiment on a 5-node graph and execute the optimized circ
 
 ## 🏗️ Architecture
 
-```text
-                                  User
-                                    │
-                             request / response
-                                    │
-                                    ▼
-                    ┌─────────────────────────────┐
-                    │ Quantum Lab Agent     :8000 │
-                    │ BeeAI orchestration         │
-                    │ IBM Granite 4.2             │
-                    └──────────────┬──────────────┘
-                                   │
-                                   ├── A2A ──► Developer Agent  :8001
-                                   │           QASM and Qiskit code
-                                   │
-                                   ├── A2A ──► Status Agent     :8002
-                                   │           Backends and jobs
-                                   │
-                                   ├── A2A ──► Computing Agent  :8003 ◄────────────┐
-                                   │           Fresh quantum jobs                 │
-                                   │                                               │
-                                   └── A2A ──► Experiment Agent :8004 ─────────────┘
-                                               QAOA/VQE · development    delegates execution
+```mermaid
+flowchart TB
+    USER([User]) <-->|Request / response| LAB["Quantum Lab Agent<br/>:8000<br/><small>BeeAI orchestration · IBM Granite 4.2</small>"]
 
-                  Status Agent ─────── Qiskit ───────┐
-                                                     ├──► IBM Quantum Platform
-                  Computing Agent ───── Qiskit ──────┘    Live backends and real QPUs
+    LAB -->|A2A| DEV["Quantum Developer Agent<br/>:8001<br/><small>QASM and Qiskit code</small>"]
+    LAB -->|A2A| STATUS["Quantum Status Agent<br/>:8002<br/><small>Backends and jobs</small>"]
+    LAB -->|A2A| COMPUTE["Quantum Computing Agent<br/>:8003<br/><small>Fresh quantum jobs</small>"]
+    LAB -->|A2A| EXPERIMENT["Quantum Experiment Agent<br/>:8004 · Development<br/><small>QAOA and VQE studies</small>"]
+
+    EXPERIMENT -.->|Delegates real execution| COMPUTE
+    STATUS -->|Qiskit| IBMQ["IBM Quantum Platform<br/><small>Live backends and real QPUs</small>"]
+    COMPUTE -->|Qiskit| IBMQ
+
+    classDef user fill:#f4f4f4,stroke:#525252,color:#161616,stroke-width:1px;
+    classDef orchestrator fill:#31135e,stroke:#6929c4,color:#ffffff,stroke-width:2px;
+    classDef agent fill:#f7f5ff,stroke:#8a3ffc,color:#161616,stroke-width:1.5px;
+    classDef development fill:#fff7e6,stroke:#f1c21b,color:#161616,stroke-width:1.5px,stroke-dasharray:5 4;
+    classDef platform fill:#001d6c,stroke:#0f62fe,color:#ffffff,stroke-width:2px;
+
+    class USER user;
+    class LAB orchestrator;
+    class DEV,STATUS,COMPUTE agent;
+    class EXPERIMENT development;
+    class IBMQ platform;
 ```
 
 The Lab Agent combines the specialized responses into a single answer containing the generated circuit, selected backend, IBM Quantum Job ID, status, or measurement results.
