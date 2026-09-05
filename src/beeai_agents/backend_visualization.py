@@ -146,8 +146,8 @@ def render_backend_dashboard(backend) -> str:
     color_bar.ax.tick_params(colors="#8d8d8d", labelsize=8)
     color_bar.outline.set_edgecolor("#525252")
 
-    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    figure.text(0.985, 0.018, f"Live IBM Quantum data • {generated_at}", color="#6f6f6f", fontsize=8, ha="right")
+    queried_at = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+    figure.text(0.985, 0.018, f"Queried locally • {queried_at}", color="#6f6f6f", fontsize=8, ha="right")
 
     output_directory = Path(tempfile.gettempdir()) / "quantum_lab_pngs"
     output_directory.mkdir(parents=True, exist_ok=True)

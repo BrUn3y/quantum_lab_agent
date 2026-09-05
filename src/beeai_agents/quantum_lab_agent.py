@@ -16,6 +16,7 @@ Type: Main A2A Server + A2A Client (invokes Developer)
 import asyncio
 import os
 import re
+from datetime import datetime
 from typing import Annotated
 from collections.abc import AsyncGenerator
 
@@ -407,6 +408,7 @@ def _backend_canvas_from_status(response: str, backend_name: str) -> AgentArtifa
     image_match = _BACKEND_TOPOLOGY_IMAGE_PATTERN.search(response)
     if not image_match:
         return None
+    queried_at = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
     return AgentArtifact(
         name=f"{backend_name} topology and status",
         metadata={"backend": backend_name, "content_type": "text/markdown"},
@@ -414,7 +416,8 @@ def _backend_canvas_from_status(response: str, backend_name: str) -> AgentArtifa
             TextPart(
                 text=(
                     f"![{backend_name} topology]({image_match.group(1)})\n\n"
-                    "Live data from IBM Quantum. Node color represents readout assignment error."
+                    "Live data from IBM Quantum. Node color represents readout assignment error.\n\n"
+                    f"Consulted locally: {queried_at}"
                 )
             )
         ],
@@ -428,6 +431,7 @@ def _execution_canvas_from_computing(response: str, qasm_code: str) -> AgentArti
         return None
     backend_match = re.search(r"\*\*Backend:\*\*\s*([^\n]+)", response)
     backend_name = backend_match.group(1).strip() if backend_match else "Quantum"
+    queried_at = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
     return AgentArtifact(
         name=f"{backend_name} execution results",
         metadata={"backend": backend_name, "content_type": "text/markdown"},
@@ -435,7 +439,29 @@ def _execution_canvas_from_computing(response: str, qasm_code: str) -> AgentArti
             TextPart(
                 text=(
                     f"![Quantum execution results]({image_match.group(1)})\n\n"
+                    f"Consulted locally: {queried_at}\n\n"
                     f"```qasm\n{qasm_code}\n```"
+                )
+            )
+        ],
+    )
+
+
+def _job_results_canvas_from_status(response: str, job_id: str) -> AgentArtifact | None:
+    """Forward a freshly retrieved single-job histogram into Lab Canvas."""
+    image_match = re.search(r"!\[[^\]]*\]\((agentstack://[a-f0-9-]+)\)", response, re.IGNORECASE)
+    if not image_match:
+        return None
+    queried_at = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+    return AgentArtifact(
+        name=f"Job {job_id} results",
+        metadata={"job_id": job_id, "content_type": "text/markdown", "fresh_query": True},
+        parts=[
+            TextPart(
+                text=(
+                    f"![Quantum job results]({image_match.group(1)})\n\n"
+                    "Live measurement results retrieved from IBM Quantum for this query.\n\n"
+                    f"Consulted locally: {queried_at}"
                 )
             )
         ],
@@ -705,7 +731,15 @@ async def quantum_lab_agent(
                 QuantumStatusClient().run({"query": user_query}),
                 timeout=180,
             )
-            response_message = AgentMessage(text=status_output.get_text_content())
+            status_response = status_output.get_text_content()
+            artifact = _job_results_canvas_from_status(status_response, job_id)
+            if artifact:
+                yield artifact
+                try:
+                    await context.store(artifact)
+                except Exception as store_error:
+                    print(f"⚠️ [Canvas] Could not store job results artifact: {explain_error(store_error)}")
+            response_message = AgentMessage(text=status_response)
             yield trajectory.trajectory_metadata(
                 title="✅ Job status obtained",
                 content="The Status Agent returned current IBM Quantum job data.",

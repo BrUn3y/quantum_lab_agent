@@ -11,8 +11,8 @@ from beeai_agents.backend_visualization import (
     canvas_marker,
     render_backend_dashboard,
 )
-from beeai_agents.quantum_lab_agent import _backend_canvas_from_status
-from beeai_agents.quantum_status_agent import _create_backend_canvas
+from beeai_agents.quantum_lab_agent import _backend_canvas_from_status, _job_results_canvas_from_status
+from beeai_agents.quantum_status_agent import _create_backend_canvas, _create_job_results_canvas
 
 
 class FakeBackend:
@@ -73,6 +73,15 @@ class BackendVisualizationTests(unittest.TestCase):
     def test_marker_round_trip(self):
         marker = canvas_marker("/tmp/quantum_lab_pngs/example.png")
         self.assertEqual(BACKEND_CANVAS_MARKER.search(marker).group(1), "/tmp/quantum_lab_pngs/example.png")
+
+    def test_single_job_histogram_creates_canvas_with_local_query_time(self):
+        response = "![Job Results](agentstack://12345678-1234-1234-1234-123456789abc)"
+        status_artifact = _create_job_results_canvas(response, "test-job")
+        lab_artifact = _job_results_canvas_from_status(response, "test-job")
+        self.assertEqual(status_artifact.name, "Job test-job results")
+        self.assertEqual(lab_artifact.name, "Job test-job results")
+        self.assertIn("Consulted locally:", status_artifact.parts[0].root.text)
+        self.assertIn("Consulted locally:", lab_artifact.parts[0].root.text)
 
 
 if __name__ == "__main__":

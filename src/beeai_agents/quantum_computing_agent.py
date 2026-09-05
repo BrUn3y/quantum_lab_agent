@@ -15,6 +15,7 @@ Type: AgentStack Server with A2A (ReActAgent with IBMQuantumTool)
 import os
 import re
 import tempfile
+from datetime import datetime
 from typing import Annotated
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -110,7 +111,10 @@ _QASM_PATTERN = re.compile(r"OPENQASM\s+(?:2\.0|3\.0)\s*;[\s\S]*", re.IGNORECASE
 _BACKEND_PATTERN = re.compile(r"\b(?:ibm|ibmq)_[a-z0-9_]+\b", re.IGNORECASE)
 _SHOTS_PATTERN = re.compile(r"\b(\d+)\s*(?:shots?|disparos?)\b", re.IGNORECASE)
 _REAL_HARDWARE_PATTERN = re.compile(
-    r"\b(real hardware|hardware real|real backend|backend real|qpu|quantum hardware|"
+    r"\b(real hardware|hardware real|real backend|backend real|"
+    r"real\s+(?:ibm\s+)?quantum\s+(?:backend|hardware|computer)|"
+    r"least\s+busy\s+(?:operational\s+)?real\s+(?:ibm\s+)?quantum\s+backend|"
+    r"qpu|quantum hardware|"
     r"hardware cu[aá]ntico|computadora cu[aá]ntica|quantum computer)\b",
     re.IGNORECASE,
 )
@@ -186,11 +190,12 @@ async def _create_execution_canvas(text: str, qasm_code: str) -> tuple[str, Agen
             content_type="image/png",
         )
         image_markdown = f"![Quantum execution results](agentstack://{uploaded.id})"
+        queried_at = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
         artifact = AgentArtifact(
             name=f"{backend_name} execution results",
             description=f"Measurement outcomes and circuit for job {job_id}.",
             metadata={"backend": backend_name, "job_id": job_id, "content_type": "text/markdown"},
-            parts=[TextPart(text=f"{image_markdown}\n\n```qasm\n{qasm_code}\n```")],
+            parts=[TextPart(text=f"{image_markdown}\n\nConsulted locally: {queried_at}\n\n```qasm\n{qasm_code}\n```")],
         )
         clean_text += f"\n\n## 📊 Visual execution results\n\n{image_markdown}\n\nThe complete dashboard is available in Canvas."
         return clean_text, artifact
