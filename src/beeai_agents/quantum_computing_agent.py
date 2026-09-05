@@ -109,6 +109,15 @@ _REAL_HARDWARE_PATTERN = re.compile(
     r"hardware cu[aá]ntico|computadora cu[aá]ntica|quantum computer)\b",
     re.IGNORECASE,
 )
+_EXECUTION_TAG_PATTERNS = (
+    (re.compile(r"\b(bell(?:\s+state)?|estado\s+de\s+bell)\b", re.IGNORECASE), "bell-state"),
+    (re.compile(r"\bgrover(?:'s)?\b", re.IGNORECASE), "grover-search"),
+    (re.compile(r"\bdeutsch[- ]?jozsa\b", re.IGNORECASE), "deutsch-jozsa"),
+    (re.compile(r"\b(cx|cnot|controlled[- ]?not)\b", re.IGNORECASE), "cx-gate"),
+    (re.compile(r"\b(superposition|superposici[oó]n)\b", re.IGNORECASE), "superposition"),
+    (re.compile(r"\b(teleportation|teleportaci[oó]n)\b", re.IGNORECASE), "teleportation"),
+    (re.compile(r"\b(qft|quantum fourier|fourier cu[aá]ntica)\b", re.IGNORECASE), "qft"),
+)
 
 
 def _extract_qasm(request: str) -> str | None:
@@ -127,14 +136,26 @@ def _extract_qasm(request: str) -> str | None:
 
 def _execution_parameters(request: str) -> dict[str, object]:
     """Parse execution parameters without requiring an LLM tool call."""
-    backend_match = _BACKEND_PATTERN.search(request)
-    shots_match = _SHOTS_PATTERN.search(request)
+    # The Lab Agent appends execution policy and QASM after this delimiter.
+    # Only the original user request may select simulator versus real hardware.
+    request_scope = request.split("\n\nExecute exactly once.", 1)[0]
+    backend_match = _BACKEND_PATTERN.search(request_scope)
+    shots_match = _SHOTS_PATTERN.search(request_scope)
+    backend_name = backend_match.group(0) if backend_match else ""
+    execution_tag = next(
+        (tag for pattern, tag in _EXECUTION_TAG_PATTERNS if pattern.search(request_scope)),
+        "quantum-circuit",
+    )
     return {
-        "backend_name": backend_match.group(0) if backend_match else "",
-        "use_real_device": bool(_REAL_HARDWARE_PATTERN.search(request)),
+        "backend_name": backend_name,
+        "use_real_device": bool(
+            _REAL_HARDWARE_PATTERN.search(request_scope)
+            or (backend_name and "simulator" not in backend_name.lower())
+        ),
         "shots": int(shots_match.group(1)) if shots_match else 1024,
         "wait_for_results": False,
         "max_wait_time": 300,
+        "job_tags": ["quantum-lab", execution_tag],
     }
 
 def create_computing_agent():
@@ -183,7 +204,8 @@ async def quantum_computing_agent(
                 "Using deterministic execution parameters:\n"
                 f"- Backend: {parameters['backend_name'] or 'least busy/default'}\n"
                 f"- Real hardware: {parameters['use_real_device']}\n"
-                f"- Shots: {parameters['shots']}"
+                f"- Shots: {parameters['shots']}\n"
+                f"- Tags: {', '.join(parameters['job_tags'])}"
             ),
         )
         try:

@@ -210,6 +210,9 @@ EXAMPLES:
             # Backend
             backend_name = job.backend().name if hasattr(job, 'backend') else "N/A"
             result_text += f"| **Backend** | {backend_name} |\n"
+            job_tags = getattr(job, "tags", None) or []
+            if job_tags:
+                result_text += f"| **Tags** | {', '.join(f'`{tag}`' for tag in job_tags)} |\n"
             
             # Job status
             status = job.status()

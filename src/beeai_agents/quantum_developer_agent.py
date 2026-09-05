@@ -384,7 +384,16 @@ DEVELOPER_AGENT_SKILLS = [
 server = Server()
 
 _SUPERPOSITION_PATTERN = re.compile(r"\b(superposition|superposici[oó]n)\b", re.IGNORECASE)
-_QUBIT_COUNT_PATTERN = re.compile(r"\b(\d+)\s*(?:qubits?|c[uú]bits?)\b", re.IGNORECASE)
+_QUBIT_COUNT_PATTERN = re.compile(r"\b(\d+)\s*[- ]?\s*(?:qubits?|c[uú]bits?)\b", re.IGNORECASE)
+_CODE_REQUEST_PATTERN = re.compile(
+    r"\b(create|generate|build|implement|circuit|qasm|crea\w*|genera\w*|"
+    r"constru\w*|implementa\w*|circuito)\b",
+    re.IGNORECASE,
+)
+_BELL_PATTERN = re.compile(r"\b(bell(?:\s+state)?|estado\s+de\s+bell)\b", re.IGNORECASE)
+_CX_PATTERN = re.compile(r"\b(cx|cnot|controlled[- ]?not|compuerta\s+cx)\b", re.IGNORECASE)
+_GROVER_PATTERN = re.compile(r"\bgrover(?:'s)?\b", re.IGNORECASE)
+_DEUTSCH_JOZSA_PATTERN = re.compile(r"\bdeutsch[- ]?jozsa\b", re.IGNORECASE)
 _CONCEPT_REQUEST_PATTERN = re.compile(
     r"\b(explain\w*|describe\w*|what (?:is|are)|explica\w*|qu[eé] (?:es|son))\b",
     re.IGNORECASE,
@@ -411,6 +420,86 @@ def _superposition_qasm(request: str) -> str | None:
         "measure q -> c;\n"
         "```"
     )
+
+
+def _basic_algorithm_qasm(request: str) -> tuple[str, str] | None:
+    """Return reliable measured QASM for common introductory circuits."""
+    if not _CODE_REQUEST_PATTERN.search(request):
+        return None
+
+    if _BELL_PATTERN.search(request):
+        return "Bell state", """```qasm
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+creg c[2];
+
+h q[0];
+cx q[0],q[1];
+measure q -> c;
+```"""
+
+    if _GROVER_PATTERN.search(request):
+        match = _QUBIT_COUNT_PATTERN.search(request)
+        qubit_count = int(match.group(1)) if match else 2
+        if qubit_count not in (2, 3):
+            return None
+        phase_flip = (
+            "cz q[0],q[1];"
+            if qubit_count == 2
+            else "h q[2];\nccx q[0],q[1],q[2];\nh q[2];"
+        )
+        return "Grover search", (
+            "```qasm\n"
+            "OPENQASM 2.0;\n"
+            'include "qelib1.inc";\n'
+            f"qreg q[{qubit_count}];\n"
+            f"creg c[{qubit_count}];\n\n"
+            "h q;\n\n"
+            f"// Oracle: mark |{'1' * qubit_count}>\n{phase_flip}\n\n"
+            "// Grover diffuser\nh q;\n"
+            "x q;\n"
+            f"{phase_flip}\n"
+            "x q;\n"
+            "h q;\n"
+            "measure q -> c;\n"
+            "```"
+        )
+
+    if _DEUTSCH_JOZSA_PATTERN.search(request):
+        return "Deutsch-Jozsa", """```qasm
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[3];
+creg c[2];
+
+// Two input qubits and one ancilla; balanced parity oracle.
+x q[2];
+h q[0];
+h q[1];
+h q[2];
+cx q[0],q[2];
+cx q[1],q[2];
+h q[0];
+h q[1];
+measure q[0] -> c[0];
+measure q[1] -> c[1];
+```"""
+
+    if _CX_PATTERN.search(request):
+        return "CX gate", """```qasm
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+creg c[2];
+
+// Prepare |10> in little-endian qubit order, then copy the control with CX.
+x q[0];
+cx q[0],q[1];
+measure q -> c;
+```"""
+
+    return None
 
 
 async def _run_concept_model(prompt: str) -> str:
@@ -488,6 +577,16 @@ async def quantum_developer_agent(
         title="🔍 Analyzing code request",
         content=f"Processing user query:\n```\n{user_query[:200]}{'...' if len(user_query) > 200 else ''}\n```"
     )
+
+    basic_algorithm = _basic_algorithm_qasm(user_query)
+    if basic_algorithm:
+        algorithm_name, algorithm_qasm = basic_algorithm
+        yield trajectory.trajectory_metadata(
+            title=f"✅ {algorithm_name} circuit generated",
+            content="Generated and measured a valid OpenQASM 2.0 circuit deterministically.",
+        )
+        yield AgentMessage(text=algorithm_qasm)
+        return
 
     superposition_qasm = _superposition_qasm(user_query)
     if superposition_qasm:

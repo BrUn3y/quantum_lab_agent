@@ -116,6 +116,22 @@ Or start each service in a separate terminal:
 ./start_lab.sh        # Port 8000 — start last
 ```
 
+### View agent logs
+
+The start scripts write separate logs to `.logs/`. Follow every agent in one terminal:
+
+```bash
+./view_logs.sh
+```
+
+Select one agent or print a snapshot without following new output:
+
+```bash
+./view_logs.sh lab
+./view_logs.sh computing -n 200
+./view_logs.sh all --no-follow
+```
+
 ### 4. Verify every agent
 
 ```bash
@@ -225,6 +241,7 @@ quantum_lab_agent/
 ├── start_developer.sh
 ├── start_status.sh
 ├── start_computing.sh
+├── view_logs.sh
 └── pyproject.toml
 ```
 
