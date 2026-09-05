@@ -63,6 +63,16 @@ class SuggestedPromptTests(unittest.TestCase):
         self.assertTrue(_is_explanation_query(examples[5]))
         self.assertTrue(_is_create_and_execute_request(examples[6]))
 
+    def test_spanish_grover_example_routes_to_create_and_execute(self):
+        prompt = "dame un ejemplo del algoritmo de grover y ejecutado en una computadora cuantica"
+        self.assertTrue(_is_create_and_execute_request(prompt))
+        self.assertFalse(_is_status_query(prompt))
+
+    def test_run_algorithm_without_create_verb_routes_to_execution(self):
+        prompt = "Run Grover's algorithm on a quantum computer"
+        self.assertTrue(_is_create_and_execute_request(prompt))
+        self.assertFalse(_is_status_query(prompt))
+
 
 class ExecutionTests(unittest.IsolatedAsyncioTestCase):
     def test_internal_policy_does_not_force_hardware(self):

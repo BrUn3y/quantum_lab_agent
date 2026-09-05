@@ -350,7 +350,8 @@ server = Server()
 
 
 _CREATE_PATTERN = re.compile(
-    r"\b(create|generate|build|make|prepare|design|crea\w*|genera\w*|constru\w*|prepara\w*)\b",
+    r"\b(create|generate|build|make|prepare|design|implement\w*|example|"
+    r"crea\w*|genera\w*|constru\w*|prepara\w*|implementa\w*|ejemplo)\b",
     re.IGNORECASE,
 )
 _EXECUTE_PATTERN = re.compile(
@@ -372,6 +373,11 @@ _EXPLANATION_PATTERN = re.compile(
     r"describe\w*|qu[eé] (?:es|son)|c[oó]mo funciona\w*)\b",
     re.IGNORECASE,
 )
+_CIRCUIT_OR_ALGORITHM_PATTERN = re.compile(
+    r"\b(circuit\w*|circuito\w*|algorithm\w*|algoritmo\w*|qasm|bell(?: state)?|"
+    r"grover(?:'s)?|deutsch[- ]jozsa|bernstein[- ]vazirani|qft|shor)\b",
+    re.IGNORECASE,
+)
 _BACKEND_TOPOLOGY_IMAGE_PATTERN = re.compile(
     r"!\[[^\]]*topology[^\]]*\]\((agentstack://[a-f0-9-]+)\)",
     re.IGNORECASE,
@@ -384,7 +390,8 @@ _EXECUTION_RESULT_IMAGE_PATTERN = re.compile(
 
 def _is_create_and_execute_request(request: str) -> bool:
     """Return whether a request explicitly asks to create and execute a circuit."""
-    return bool(_CREATE_PATTERN.search(request) and _EXECUTE_PATTERN.search(request))
+    asks_for_a_circuit = _CREATE_PATTERN.search(request) or _CIRCUIT_OR_ALGORITHM_PATTERN.search(request)
+    return bool(asks_for_a_circuit and _EXECUTE_PATTERN.search(request))
 
 
 def _single_job_id_query(request: str) -> str | None:
@@ -395,6 +402,8 @@ def _single_job_id_query(request: str) -> str | None:
 
 def _is_status_query(request: str) -> bool:
     """Return whether the request belongs to the Status Agent."""
+    if _is_create_and_execute_request(request):
+        return False
     return bool(_BACKEND_NAME_PATTERN.search(request) or _STATUS_QUERY_PATTERN.search(request))
 
 
