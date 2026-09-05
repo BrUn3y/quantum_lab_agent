@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field
 from qiskit_ibm_runtime import QiskitRuntimeService
 from typing import Optional
 
+from ..backend_visualization import canvas_marker, render_backend_dashboard
+
 class QuantumInfoInput(BaseModel):
     """Input schema for quantum computer detailed information"""
     backend_name: str = Field(
@@ -185,15 +187,16 @@ class IBMQuantumInfoTool(Tool[QuantumInfoInput]):
                 try:
                     coupling_map = backend.coupling_map
                     if coupling_map:
+                        connections = sorted({tuple(sorted(edge)) for edge in coupling_map.get_edges()})
                         result_text += "## 🔗 Connectivity Topology\n\n"
-                        result_text += f"**Total connections:** {len(coupling_map)}\n\n"
+                        result_text += f"**Total connections:** {len(connections)}\n\n"
                         
-                        if len(coupling_map) <= 20:
+                        if len(connections) <= 20:
                             result_text += "**Connection map:**\n"
-                            for edge in coupling_map:
+                            for edge in connections:
                                 result_text += f"- Q{edge[0]} ↔ Q{edge[1]}\n"
                         else:
-                            result_text += f"*Too many connections to display ({len(coupling_map)}). Backend has complex topology.*\n"
+                            result_text += f"*Too many connections to display ({len(connections)}). Backend has complex topology.*\n"
                         
                         result_text += "\n"
                 except Exception:
@@ -219,6 +222,12 @@ class IBMQuantumInfoTool(Tool[QuantumInfoInput]):
             result_text += "---\n\n"
             result_text += "💡 **Note:** This information is updated periodically. "
             result_text += "For real-time data, check status with `ibm_quantum_status`.\n"
+
+            try:
+                dashboard_path = render_backend_dashboard(backend)
+                result_text += f"\n{canvas_marker(dashboard_path)}\n"
+            except Exception as visualization_error:
+                result_text += f"\n⚠️ Topology visualization unavailable: {visualization_error}\n"
             
             return StringToolOutput(result=result_text)
             
