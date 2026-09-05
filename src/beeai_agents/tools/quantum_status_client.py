@@ -16,6 +16,8 @@ from pydantic import BaseModel, Field
 from typing import Optional
 import os
 
+from .a2a_response import extract_final_text
+
 class StatusClientInput(BaseModel):
     """Input schema for Quantum Status Client"""
     query: str = Field(
@@ -135,7 +137,7 @@ OUTPUT:
             response = await a2a_agent.run(input.query)
             
             # Extract text from response
-            status_response = response.last_message.text if hasattr(response, 'last_message') else str(response)
+            status_response = extract_final_text(response)
             
             if not status_response:
                 return StringToolOutput(

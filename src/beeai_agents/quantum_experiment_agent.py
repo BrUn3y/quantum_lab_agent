@@ -21,6 +21,7 @@ from beeai_framework.memory import UnconstrainedMemory
 
 from .experiment_engine import QAOAExperimentResult, run_maxcut_qaoa
 from .model_config import create_chat_model, explain_error, model_name, run_agent_with_retries
+from .tools.a2a_response import extract_final_text
 
 
 EXPERIMENT_INSTRUCTIONS = """You are the Quantum Experiment Agent, powered by IBM Granite 4.2.
@@ -133,7 +134,7 @@ async def _submit_to_computing(request: str, qasm: str) -> str:
         f"Original experiment request: {request}\n\n```qasm\n{qasm}\n```"
     )
     response = await agent.run(execution_request)
-    return response.last_message.text if hasattr(response, "last_message") else str(response)
+    return extract_final_text(response)
 
 
 async def _upload_dashboard(result: QAOAExperimentResult) -> tuple[AgentArtifact | None, str]:

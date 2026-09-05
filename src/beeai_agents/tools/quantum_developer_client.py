@@ -16,6 +16,8 @@ from pydantic import BaseModel, Field
 from typing import Optional
 import os
 
+from .a2a_response import extract_final_text
+
 class DeveloperClientInput(BaseModel):
     """Input schema for Quantum Developer Client"""
     request: str = Field(
@@ -148,7 +150,7 @@ OUTPUT:
             response = await a2a_agent.run(full_request)
             
             # Extract the response text
-            developer_response = response.last_message.text if hasattr(response, 'last_message') else str(response)
+            developer_response = extract_final_text(response)
             
             if not developer_response:
                 return StringToolOutput(
