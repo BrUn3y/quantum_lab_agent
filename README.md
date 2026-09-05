@@ -29,7 +29,7 @@ Local inference uses **IBM Granite 4.2 8B** through Ollama by default.
 
 | Agent | Responsibility | Port | Public repository |
 |---|---|:---:|---|
-| 🎯 **Quantum Lab Agent** | Main orchestrator coordinating all agents | `8000` | [quantum-lab-agent](https://github.com/BrUn3y/quantum-lab-agent) |
+| 🎯 **Quantum Lab Agent** | Main orchestrator coordinating all agents | `8000` | [quantum_lab_agent](https://github.com/BrUn3y/quantum_lab_agent) |
 | 💻 **Quantum Developer Agent** | Code generation specialist | `8001` | [quantum-developer-agent](https://github.com/BrUn3y/quantum-developer-agent) |
 | 📊 **Quantum Status Agent** | Status monitoring specialist | `8002` | [quantum-status-agent](https://github.com/BrUn3y/quantum-status-agent) |
 | ⚡ **Quantum Computing Agent** | Circuit execution specialist | `8003` | [quantum-computing-agent](https://github.com/BrUn3y/quantum-computing-agent) |
@@ -252,7 +252,7 @@ quantum_lab_agent/
 | [Quantum Computing Agent](https://github.com/BrUn3y/quantum-computing-agent) | Circuit execution specialist |
 | [Quantum Status Agent](https://github.com/BrUn3y/quantum-status-agent) | Status monitoring and job tracking |
 | [Quantum Developer Agent](https://github.com/BrUn3y/quantum-developer-agent) | Code generation and algorithm implementation |
-| [Quantum Lab Agent](https://github.com/BrUn3y/quantum-lab-agent) | Main orchestrator coordinating all agents |
+| [Quantum Lab Agent](https://github.com/BrUn3y/quantum_lab_agent) | Main orchestrator coordinating all agents |
 
 ## Contributing
 
