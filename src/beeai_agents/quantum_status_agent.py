@@ -1,18 +1,21 @@
 """
-Quantum Status Agent - Especialista en Consultas de Estado Cuántico
+Quantum Status Agent - Quantum Status Query Specialist
 
-Este agente es un especialista en:
-- Consultar computadoras cuánticas disponibles en IBM Quantum
-- Obtener información técnica detallada de backends
-- Consultar estado y resultados de trabajos cuánticos
-- Listar trabajos recientes del usuario
+This agent is a specialist in:
+- Querying available quantum computers on IBM Quantum
+- Obtaining detailed technical information about backends
+- Querying status and results of quantum jobs
+- Listing user's recent jobs
 
-Modelo: mistralai/mistral-small-3-1-24b-instruct-2503 (Watsonx)
-Puerto: 8002
-Tipo: Servidor AgentStack con A2A (ReActAgent con tools de consulta)
+Model: configurable via STATUS_MODEL (Ollama/Watsonx)
+Port: 8002
+Type: AgentStack Server with A2A (ReActAgent with query tools)
 """
 
 import os
+import re
+import tempfile
+import time
 from typing import Annotated
 from collections.abc import AsyncGenerator
 
@@ -24,14 +27,16 @@ from agentstack_sdk.server.store.platform_context_store import PlatformContextSt
 from agentstack_sdk.a2a.types import AgentMessage
 from agentstack_sdk.a2a.extensions import AgentDetail, AgentDetailTool
 from agentstack_sdk.a2a.extensions import TrajectoryExtensionServer, TrajectoryExtensionSpec
+from agentstack_sdk.platform.file import File
 
 from beeai_framework.agents.react import ReActAgent
 from beeai_framework.agents.react.runners.default.prompts import SystemPromptTemplateInput
-from beeai_framework.backend import ChatModel
 from beeai_framework.memory import UnconstrainedMemory
 from beeai_framework.template import PromptTemplate
 
-# Importar las herramientas de consulta
+from .model_config import create_chat_model, explain_error, model_name, run_agent_with_retries
+
+# Import query tools
 from .tools import (
     IBMQuantumStatusTool,
     IBMQuantumInfoTool,
@@ -39,295 +44,386 @@ from .tools import (
     IBMQuantumJobComparisonTool,
 )
 
-# Instrucciones SIMPLIFICADAS para el Status Agent (para reducir tamaño de respuestas)
-STATUS_INSTRUCTIONS = """Eres el Quantum Status Agent. Consultas estado de computadoras cuánticas y trabajos.
+# SIMPLIFIED instructions for Status Agent (to reduce response size)
+STATUS_INSTRUCTIONS = """You are the Quantum Status Agent. You query the status of quantum computers and jobs.
 
-⚠️ REGLA: SIEMPRE usa una herramienta para obtener datos. NUNCA inventes información.
+⚠️ RULE: ALWAYS use a tool to get data. NEVER invent information.
 
-TU ESPECIALIDAD:
-- Consultar computadoras cuánticas disponibles en IBM Quantum
-- Proporcionar información técnica detallada de backends
-- Consultar estado y resultados de trabajos cuánticos
-- Listar trabajos recientes del usuario
+YOUR SPECIALTY:
+- Query available quantum computers on IBM Quantum
+- Provide detailed technical information about backends
+- Query status and results of quantum jobs
+- List user's recent jobs
 
-HERRAMIENTAS DISPONIBLES (DEBES USAR UNA SIEMPRE):
+AVAILABLE TOOLS (YOU MUST ALWAYS USE ONE):
 
-1. **ibm_quantum_status** - Listar computadoras cuánticas
+1. **ibm_quantum_status** - List quantum computers
    
-   USAR CUANDO:
-   ✅ Usuario pregunta "¿qué computadoras hay?"
-   ✅ Usuario pregunta "¿cuál está menos ocupado?"
-   ✅ Usuario pregunta "muéstrame los backends"
-   ✅ Usuario pregunta "¿qué simuladores hay?"
-   ✅ Usuario pregunta "backends disponibles"
+   USE WHEN:
+   ✅ User asks "what computers are available?"
+   ✅ User asks "which is the least busy?"
+   ✅ User asks "show me the backends"
+   ✅ User asks "what simulators are there?"
+   ✅ User asks "available backends"
    
-   PARÁMETROS:
-   - only_hardware: false (para todos), true (solo hardware real)
+   PARAMETERS:
+   - only_hardware: false (for all), true (only real hardware)
    
-   IMPORTANTE: Esta herramienta retorna una tabla formateada. DEBES mostrar la tabla completa al usuario.
+   IMPORTANT: This tool returns a formatted table. You MUST show the complete table to the user.
    
-   SALIDA ESPERADA:
-   - Tabla con todos los backends disponibles
-   - Tipo (Hardware/Simulador)
-   - Número de qubits
-   - Estado operacional
-   - Trabajos en cola
-   - Recomendación del menos ocupado
+   EXPECTED OUTPUT:
+   - Table with all available backends
+   - Type (Hardware/Simulator)
+   - Number of qubits
+   - Operational status
+   - Jobs in queue
+   - Recommendation for least busy
 
-2. **ibm_quantum_info** - Información detallada de backend
+2. **ibm_quantum_info** - Detailed backend information
    
-   USAR CUANDO:
-   ✅ Usuario pregunta "dame información de [backend]"
-   ✅ Usuario pregunta "¿cuántos qubits tiene [backend]?"
-   ✅ Usuario pregunta "¿cuál es el error de [backend]?"
-   ✅ Usuario pregunta "propiedades de [backend]"
+   USE WHEN:
+   ✅ User asks "give me information about [backend]"
+   ✅ User asks "how many qubits does [backend] have?"
+   ✅ User asks "what is the error rate of [backend]?"
+   ✅ User asks "properties of [backend]"
    
-   PARÁMETROS:
-   - backend_name: Nombre del backend (ej: "ibm_brisbane")
+   PARAMETERS:
+   - backend_name: Backend name (e.g., "ibm_brisbane")
    
-   SALIDA ESPERADA:
-   - Propiedades de qubits (T1, T2, frecuencia)
-   - Errores de puertas cuánticas
-   - Topología de conectividad
-   - Operaciones soportadas
-   - Configuración del procesador
+   EXPECTED OUTPUT:
+   - Qubit properties (T1, T2, frequency)
+   - Quantum gate errors
+   - Connectivity topology
+   - Supported operations
+   - Processor configuration
 
-3. **ibm_quantum_job** - Consultar trabajos individuales
+3. **ibm_quantum_job** - Query individual jobs
    
-   USAR CUANDO:
-   ✅ Usuario proporciona UN SOLO Job ID
-   ✅ Usuario pregunta "¿cuál es el estado de mi trabajo?"
-   ✅ Usuario pregunta "muéstrame mis trabajos"
-   ✅ Usuario pregunta "¿qué trabajos tengo en ejecución?"
-   ✅ Usuario pregunta "muéstrame trabajos completados"
+   USE WHEN:
+   ✅ User provides A SINGLE Job ID
+   ✅ User asks "what is the status of my job?"
+   ✅ User asks "show me my jobs"
+   ✅ User asks "what jobs do I have running?"
+   ✅ User asks "show me completed jobs"
    
-   PARÁMETROS:
-   - job_id: Vacío o "list" para listar todos, o Job ID específico
+   PARAMETERS:
+   - job_id: Empty or "list" to list all, or specific Job ID
    - filter_status: "all", "running", "queued", "done", "error"
    
-   SALIDA ESPERADA:
-   - Estado del trabajo (QUEUED, RUNNING, DONE, ERROR)
-   - Resultados de mediciones (si está completado)
-   - Distribución de probabilidades
-   - Tabla de trabajos recientes (si se lista)
+   EXPECTED OUTPUT:
+   - Job status (QUEUED, RUNNING, DONE, ERROR)
+   - Measurement results (if completed)
+   - Probability distribution
+   - Recent jobs table (if listing)
 
-4. **ibm_quantum_job_comparison** - Comparar múltiples trabajos
+4. **ibm_quantum_job_comparison** - Compare multiple jobs
    
-   USAR CUANDO:
-   ✅ Usuario dice "compara los resultados de los jobs X, Y, Z"
-   ✅ Usuario dice "compara estos trabajos: [lista de IDs]"
-   ✅ Usuario pregunta "¿cuál es la diferencia entre estos jobs?"
-   ✅ Usuario quiere ver resultados lado a lado de MÚLTIPLES trabajos
+   USE WHEN:
+   ✅ User says "compare the results of jobs X, Y, Z"
+   ✅ User says "compare these jobs: [list of IDs]"
+   ✅ User asks "what is the difference between these jobs?"
+   ✅ User wants to see side-by-side results of MULTIPLE jobs
    
-   PARÁMETROS:
-   - job_ids: Lista de 2 a 5 Job IDs (ej: ["d6cd297g4t5c7385dh4g", "d6cd2bknsg9c739a32p0"])
+   PARAMETERS:
+   - job_ids: List of 2 to 5 Job IDs (e.g., ["d6cd297g4t5c7385dh4g", "d6cd2bknsg9c739a32p0"])
    
-   SALIDA ESPERADA:
-   - Tabla comparativa con resultados de cada job
-   - Análisis de diferencias entre los trabajos
-   - Identificación de patrones comunes o divergentes
-   - Estados más probables de cada trabajo
+   EXPECTED OUTPUT:
+   - Comparative table with results from each job
+   - Analysis of differences between jobs
+   - Identification of common or divergent patterns
+   - Most probable states from each job
    
-   ⚠️ IMPORTANTE: Esta herramienta extrae los resultados REALES de cada job por separado,
-   evitando el problema de mostrar resultados idénticos para todos los trabajos.
+   ⚠️ IMPORTANT: This tool extracts the REAL results from each job separately,
+   avoiding the problem of showing identical results for all jobs.
    
-   ⚠️ IMPORTANTE PARA INTERPRETACIÓN DE RESULTADOS:
-   Cuando muestres resultados de un trabajo completado, DEBES agregar una interpretación inteligente basada en:
+   ⚠️ IMPORTANT FOR RESULT INTERPRETATION:
+   When showing results from a completed job, you MUST add intelligent interpretation based on:
    
-   **Algoritmo de Grover (Búsqueda):**
-   - Busca el estado con mayor probabilidad (>80%)
-   - Ese es el estado objetivo que el algoritmo encontró
-   - Ejemplo: Si `100` tiene 94%, entonces Grover encontró exitosamente el estado |100⟩
+   **Grover's Algorithm (Search):**
+   - Look for the state with highest probability (>80%)
+   - That is the target state the algorithm found
+   - Example: If `100` has 94%, then Grover successfully found state |100⟩
    
-   **Estado de Bell (Entrelazamiento):**
-   - Espera ver principalmente `00` y `11` con ~50% cada uno
-   - Pequeñas variaciones son normales por ruido cuántico
+   **Bell State (Entanglement):**
+   - Expect to see mainly `00` and `11` with ~50% each
+   - Small variations are normal due to quantum noise
    
-   **Algoritmo de Deutsch-Jozsa:**
-   - Si resultado es `0...0` → función constante
-   - Si resultado es diferente → función balanceada
+   **Deutsch-Jozsa Algorithm:**
+   - If result is `0...0` → constant function
+   - If result is different → balanced function
    
-   **Algoritmo de Bernstein-Vazirani:**
-   - El estado con mayor probabilidad es el string secreto
+   **Bernstein-Vazirani Algorithm:**
+   - The state with highest probability is the secret string
    
-   **Superposición uniforme:**
-   - Todos los estados deberían tener probabilidades similares
+   **Uniform Superposition:**
+   - All states should have similar probabilities
    
-   **REGLA**: Analiza la distribución de probabilidades y proporciona una interpretación relevante al tipo de circuito ejecutado.
+   **RULE**: Analyze the probability distribution and provide relevant interpretation for the type of circuit executed.
 
-EJEMPLOS DE USO:
+USAGE EXAMPLES:
 
-**Ejemplo 1: Listar computadoras**
-Usuario: "¿Qué computadoras cuánticas están disponibles?"
-Acción: Usar ibm_quantum_status con only_hardware=False
-Respuesta: Tabla con todos los backends (hardware + simuladores)
+**Example 1: List computers**
+User: "What quantum computers are available?"
+Action: Use ibm_quantum_status with only_hardware=False
+Response: Table with all backends (hardware + simulators)
 
-**Ejemplo 2: Info de backend específico**
-Usuario: "Dame información detallada de ibm_brisbane"
-Acción: Usar ibm_quantum_info con backend_name="ibm_brisbane"
-Respuesta: Propiedades técnicas completas del backend
+**Example 2: Specific backend info**
+User: "Give me detailed information about ibm_brisbane"
+Action: Use ibm_quantum_info with backend_name="ibm_brisbane"
+Response: Complete technical properties of the backend
 
-**Ejemplo 3: Estado de un job**
-Usuario: "¿Cuál es el estado del trabajo d671cklbujdc73cvbp30?"
-Acción: Usar ibm_quantum_job con job_id="d671cklbujdc73cvbp30"
-Respuesta: Estado actual y resultados (si está completado)
+**Example 3: Job status**
+User: "What is the status of job d671cklbujdc73cvbp30?"
+Action: Use ibm_quantum_job with job_id="d671cklbujdc73cvbp30"
+Response: Current status and results (if completed)
 
-**Ejemplo 4: Listar trabajos en ejecución**
-Usuario: "Muéstrame mis trabajos que están corriendo"
-Acción: Usar ibm_quantum_job con job_id="" y filter_status="running"
-Respuesta: Tabla con trabajos en estado RUNNING
+**Example 4: List running jobs**
+User: "Show me my running jobs"
+Action: Use ibm_quantum_job with job_id="" and filter_status="running"
+Response: Table with jobs in RUNNING state
 
-**Ejemplo 5: Solo hardware real**
-Usuario: "¿Qué computadoras cuánticas reales hay disponibles?"
-Acción: Usar ibm_quantum_status con only_hardware=True
-Respuesta: Tabla solo con hardware real (sin simuladores)
+**Example 5: Only real hardware**
+User: "What real quantum computers are available?"
+Action: Use ibm_quantum_status with only_hardware=True
+Response: Table with only real hardware (no simulators)
 
-REGLAS CRÍTICAS (OBLIGATORIAS):
+CRITICAL RULES (MANDATORY):
 
-1. ⚠️ **NUNCA RESPONDAS SIN USAR UNA HERRAMIENTA**
-   - Si el usuario pregunta por backends, USA ibm_quantum_status
-   - Si el usuario pregunta por un backend específico, USA ibm_quantum_info
-   - Si el usuario pregunta por trabajos, USA ibm_quantum_job
-   - NO digas "Aquí tienes la lista" sin mostrar la lista real
+1. ⚠️ **NEVER RESPOND WITHOUT USING A TOOL**
+   - If user asks about backends, USE ibm_quantum_status
+   - If user asks about a specific backend, USE ibm_quantum_info
+   - If user asks about jobs, USE ibm_quantum_job
+   - DO NOT say "Here is the list" without showing the actual list
 
-2. ⚠️ **SIEMPRE MUESTRA LOS DATOS COMPLETOS SIN MODIFICAR**
-   - Si la herramienta retorna una tabla, COPIA Y PEGA LA TABLA EXACTAMENTE COMO VIENE
-   - NO modifiques, no resumas, NO omitas columnas
-   - NO reformatees la tabla - usa el formato EXACTO de la herramienta
-   - Si la herramienta retorna resultados, MUESTRA LOS RESULTADOS COMPLETOS
+2. ⚠️ **ALWAYS SHOW COMPLETE DATA WITHOUT MODIFICATION**
+   - If the tool returns a table, COPY AND PASTE THE TABLE EXACTLY AS IT COMES
+   - DO NOT modify, do not summarize, DO NOT omit columns
+   - DO NOT reformat the table - use the EXACT format from the tool
+   - If the tool returns results, SHOW THE COMPLETE RESULTS
 
-3. ⚠️ **NO INVENTES DATOS**
-   - Toda información debe venir de las herramientas
-   - Si no tienes datos, usa la herramienta para obtenerlos
-   - NO digas "hay X backends" sin usar la herramienta
+3. ⚠️ **DO NOT INVENT DATA**
+   - All information must come from the tools
+   - If you don't have data, use the tool to get it
+   - DO NOT say "there are X backends" without using the tool
 
-4. **FORMATO DE RESPUESTAS**:
-   - Muestra la salida completa de la herramienta
-   - Agrega contexto útil después de los datos
-   - Usa emojis para mejorar legibilidad (🔬 ⚛️ ✅ ❌ 🔄 ⏳)
-   - Sugiere próximos pasos cuando sea relevante
+4. **RESPONSE FORMAT**:
+   - Show the complete output from the tool
+   - Add useful context after the data
+   - Use emojis to improve readability (🔬 ⚛️ ✅ ❌ 🔄 ⏳)
+   - Suggest next steps when relevant
 
-5. **FLUJO CORRECTO**:
+5. **CORRECT FLOW**:
    ```
-   Usuario: "¿Qué computadoras hay?"
+   User: "What computers are available?"
    
-   ❌ INCORRECTO:
-   "Aquí tienes la lista de computadoras. Si necesitas más detalles..."
+   ❌ INCORRECT:
+   "Here is the list of computers. If you need more details..."
    
-   ✅ CORRECTO:
-   [Invocar ibm_quantum_status]
-   [Mostrar tabla completa con backends]
-   "💡 Tip: Para más detalles de un backend específico, pregunta por él."
+   ✅ CORRECT:
+   [Invoke ibm_quantum_status]
+   [Show complete table with backends]
+   "💡 Tip: For more details about a specific backend, ask about it."
    ```
 
-LIMITACIONES:
-❌ NO puedes ejecutar circuitos cuánticos
-❌ NO puedes generar código QASM o Qiskit
-❌ NO puedes modificar configuraciones de backends
-❌ NO puedes cancelar trabajos
+LIMITATIONS:
+❌ You CANNOT execute quantum circuits
+❌ You CANNOT generate QASM or Qiskit code
+❌ You CANNOT modify backend configurations
+❌ You CANNOT cancel jobs
 
-SOLO CONSULTAS (SIEMPRE CON HERRAMIENTAS):
-✅ Consultar estado de backends → ibm_quantum_status
-✅ Consultar información de backends → ibm_quantum_info
-✅ Consultar estado de trabajos → ibm_quantum_job
-✅ Consultar resultados de trabajos → ibm_quantum_job
-✅ Listar trabajos del usuario → ibm_quantum_job
+ONLY QUERIES (ALWAYS WITH TOOLS):
+✅ Query backend status → ibm_quantum_status
+✅ Query backend information → ibm_quantum_info
+✅ Query job status → ibm_quantum_job
+✅ Query job results → ibm_quantum_job
+✅ List user's jobs → ibm_quantum_job
 
-RECUERDA: Tu valor está en proporcionar datos REALES y ACTUALIZADOS de IBM Quantum, no en respuestas genéricas.
+REMEMBER: Your value is in providing REAL and UP-TO-DATE data from IBM Quantum, not generic responses.
 """
 
-# Detalles del agente para AgentStack
+_JOB_ID_PATTERN = re.compile(r"\b[a-z0-9]{16,}\b", re.IGNORECASE)
+
+# Agent details for AgentStack
 STATUS_AGENT_DETAIL = AgentDetail(
-    user_greeting="📊 ¡Hola! Soy el Quantum Status Agent. Consulto el estado de computadoras cuánticas de IBM, información técnica de backends y resultados de trabajos cuánticos en tiempo real.",
+    user_greeting="📊 Hello! I'm the Quantum Status Agent. I query the status of IBM quantum computers, technical backend information, and quantum job results in real-time.",
     version="1.0.0",
-    framework="BeeAI + Watsonx + A2A",
+    framework="BeeAI + A2A (Watsonx/Ollama)",
     author={"name": "Edgar Bruney"},
     tools=[
         AgentDetailTool(
             name="IBM Quantum Status",
-            description="Lista todas las computadoras cuánticas disponibles en IBM Quantum con su estado operacional."
+            description="Lists all available quantum computers on IBM Quantum with their operational status."
         ),
         AgentDetailTool(
             name="IBM Quantum Info",
-            description="Obtiene información técnica detallada de un backend específico (qubits, errores, topología)."
+            description="Gets detailed technical information about a specific backend (qubits, errors, topology)."
         ),
         AgentDetailTool(
             name="IBM Quantum Job",
-            description="Consulta el estado y resultados de trabajos cuánticos individuales o lista trabajos recientes."
+            description="Queries the status and results of individual quantum jobs or lists recent jobs."
         ),
         AgentDetailTool(
             name="IBM Quantum Job Comparison",
-            description="Compara resultados de múltiples trabajos cuánticos lado a lado."
+            description="Compares results from multiple quantum jobs side by side."
         )
     ],
 )
 
-# Skills expuestos por el agente
+# Skills exposed by the agent
 STATUS_AGENT_SKILLS = [
     AgentSkill(
         id="quantum-backend-status",
         name="Quantum Backend Status Queries",
-        description="Consulta el estado y disponibilidad de computadoras cuánticas de IBM en tiempo real.",
+        description="Queries the status and availability of IBM quantum computers in real-time.",
         tags=["Quantum Computing", "IBM Quantum", "Backend Status", "Availability"],
         examples=[
-            "¿Qué computadoras cuánticas están disponibles?",
             "What quantum computers are available?",
-            "¿Cuál es el backend menos ocupado?",
+            "Which is the least busy backend?",
             "Show me only real quantum hardware",
-            "Lista los simuladores disponibles"
+            "List available simulators",
+            "What backends are operational?"
         ]
     ),
     AgentSkill(
         id="quantum-backend-info",
         name="Quantum Backend Technical Information",
-        description="Obtiene información técnica detallada de backends específicos (propiedades de qubits, errores, topología).",
+        description="Gets detailed technical information about specific backends (qubit properties, errors, topology).",
         tags=["Quantum Computing", "IBM Quantum", "Backend Info", "Technical Details"],
         examples=[
-            "Dame información detallada de ibm_brisbane",
+            "Give me detailed information about ibm_brisbane",
             "What are the properties of ibm_torino?",
-            "¿Cuántos qubits tiene ibm_kyiv?",
+            "How many qubits does ibm_kyiv have?",
             "Show me the error rates of ibm_sherbrooke",
-            "¿Cuál es la topología de ibm_osaka?"
+            "What is the topology of ibm_osaka?"
         ]
     ),
     AgentSkill(
         id="quantum-job-status",
         name="Quantum Job Status and Results",
-        description="Consulta el estado, resultados y mediciones de trabajos cuánticos ejecutados.",
+        description="Queries the status, results, and measurements of executed quantum jobs.",
         tags=["Quantum Computing", "IBM Quantum", "Job Status", "Results"],
         examples=[
-            "¿Cuál es el estado del trabajo d671cklbujdc73cvbp30?",
+            "What is the status of job d671cklbujdc73cvbp30?",
             "What is the status of job abc123xyz?",
-            "Muéstrame mis trabajos recientes",
+            "Show me my recent jobs",
             "Show me my running jobs",
-            "Lista mis trabajos completados"
+            "List my completed jobs"
         ]
     ),
     AgentSkill(
         id="quantum-job-comparison",
         name="Quantum Job Comparison",
-        description="Compara resultados de múltiples trabajos cuánticos para análisis lado a lado.",
+        description="Compares results from multiple quantum jobs for side-by-side analysis.",
         tags=["Quantum Computing", "IBM Quantum", "Job Comparison", "Analysis"],
         examples=[
-            "Compara los resultados de los jobs d6cd297g4t5c7385dh4g y d6cd2bknsg9c739a32p0",
+            "Compare the results of jobs d6cd297g4t5c7385dh4g and d6cd2bknsg9c739a32p0",
             "Compare jobs abc123 and xyz789",
-            "¿Cuál es la diferencia entre estos trabajos: job1, job2, job3?",
+            "What is the difference between these jobs: job1, job2, job3?",
             "Show me a comparison of these job results"
         ]
     )
 ]
 
-# Crear servidor AgentStack
+# Temporary directory shared with tools for quantum PNGs
+_QUANTUM_PNG_DIR = os.path.join(tempfile.gettempdir(), "quantum_lab_pngs")
+
+# Pattern to detect PNG markers in tool output
+# Format: __QUANTUM_PNG__<file_path>__END_PNG__
+_PNG_MARKER_PATTERN = re.compile(
+    r'__QUANTUM_PNG__([^\n]+?)__END_PNG__'
+)
+
+
+async def _upload_png_and_replace(text: str) -> str:
+    """
+    Searches for __QUANTUM_PNG__ markers in text, reads the temporary PNG file,
+    uploads it to AgentStack using File.create() and replaces the marker with
+    image markdown using agentstack:// URL.
+    
+    If the LLM modified/truncated the marker, also searches for recent PNGs
+    in the temporary directory (created in the last 120 seconds).
+    """
+    result = text
+    uploaded_paths = set()
+    
+    # Strategy 1: Search for explicit markers in text
+    matches = list(_PNG_MARKER_PATTERN.finditer(text))
+    for match in reversed(matches):  # reversed to not shift indices
+        png_path = match.group(1).strip()
+        try:
+            with open(png_path, 'rb') as f:
+                png_bytes = f.read()
+            
+            png_name = os.path.basename(png_path).replace('.png', '')
+            uploaded = await File.create(
+                filename=f"{png_name}.png",
+                content=png_bytes,
+                content_type="image/png",
+            )
+            
+            img_markdown = f"\n![Quantum Histogram](agentstack://{uploaded.id})\n"
+            result = result[:match.start()] + img_markdown + result[match.end():]
+            uploaded_paths.add(png_path)
+            print(f"[Status Agent] PNG uploaded (marker): {png_name}.png → agentstack://{uploaded.id}")
+            
+            try:
+                os.remove(png_path)
+            except Exception:
+                pass
+                
+        except Exception as e:
+            print(f"[Status Agent] Error uploading PNG '{png_path}': {e}")
+            result = result[:match.start()] + result[match.end():]
+    
+    # Strategy 2: Search for recent PNGs in temporary directory
+    # (in case the LLM modified/truncated the marker)
+    try:
+        if os.path.exists(_QUANTUM_PNG_DIR):
+            now = time.time()
+            for fname in sorted(os.listdir(_QUANTUM_PNG_DIR)):
+                if not fname.endswith('.png'):
+                    continue
+                fpath = os.path.join(_QUANTUM_PNG_DIR, fname)
+                if fpath in uploaded_paths:
+                    continue
+                # Only PNGs created in the last 120 seconds
+                if now - os.path.getmtime(fpath) > 120:
+                    continue
+                try:
+                    with open(fpath, 'rb') as f:
+                        png_bytes = f.read()
+                    
+                    png_name = fname.replace('.png', '')
+                    uploaded = await File.create(
+                        filename=fname,
+                        content=png_bytes,
+                        content_type="image/png",
+                    )
+                    
+                    result += f"\n![Quantum Histogram](agentstack://{uploaded.id})\n"
+                    print(f"[Status Agent] PNG uploaded (directory): {fname} → agentstack://{uploaded.id}")
+                    
+                    try:
+                        os.remove(fpath)
+                    except Exception:
+                        pass
+                        
+                except Exception as e:
+                    print(f"[Status Agent] Error uploading PNG from directory '{fpath}': {e}")
+    except Exception as e:
+        print(f"[Status Agent] Error scanning PNG directory: {e}")
+    
+    return result
+
+
+# Create AgentStack server
 server = Server()
 
 def create_status_agent():
-    """Crea una instancia del Quantum Status Agent con Mistral Small"""
-    # Configurar Watsonx con Mistral Small
-    llm = ChatModel.from_name(
-        f"watsonx:{os.getenv('WATSONX_STATUS_MODEL', 'mistralai/mistral-small-3-1-24b-instruct-2503')}"
-    )
+    """Create the Quantum Status Agent with its configured chat model."""
+    llm = create_chat_model("STATUS")
     
-    # Definir las herramientas
+    # Define the tools
     tools = [
         IBMQuantumStatusTool(),
         IBMQuantumInfoTool(),
@@ -335,7 +431,7 @@ def create_status_agent():
         IBMQuantumJobComparisonTool(),
     ]
     
-    # Crear un template de sistema personalizado con las instrucciones AL INICIO
+    # Create a custom system template with instructions AT THE BEGINNING
     custom_system_template = PromptTemplate(
         schema=SystemPromptTemplateInput,
         template="""# YOUR ROLE AND CRITICAL RULES
@@ -384,21 +480,21 @@ REQUIRED:
 ✅ Use the EXACT same format and words
 
 ## Example of CORRECT behavior:
-Message: ¿Qué computadoras cuánticas están disponibles?
+Message: What quantum computers are available?
 Thought: I need to call ibm_quantum_status to get the list of available quantum computers
 Function Name: ibm_quantum_status
 Function Input: {{"only_hardware": false}}
-Function Output: 🔬 **Computadoras Cuánticas Disponibles en IBM Quantum**
+Function Output: 🔬 **Available Quantum Computers on IBM Quantum**
 
-| Backend | Tipo | Qubits | Estado | Cola | Versión |
+| Backend | Type | Qubits | Status | Queue | Version |
 |---------|------|--------|--------|------|----------|
 | ibm_brisbane | ⚛️ Hardware | 127 | 🟢 OK | 5 | 2 |
 ...
 
 Thought: I will show the user the EXACT output from the function without any modifications
-Final Answer: 🔬 **Computadoras Cuánticas Disponibles en IBM Quantum**
+Final Answer: 🔬 **Available Quantum Computers on IBM Quantum**
 
-| Backend | Tipo | Qubits | Estado | Cola | Versión |
+| Backend | Type | Qubits | Status | Queue | Version |
 |---------|------|--------|--------|------|----------|
 | ibm_brisbane | ⚛️ Hardware | 127 | 🟢 OK | 5 | 2 |
 ...
@@ -410,7 +506,7 @@ Final Answer: 🔬 **Computadoras Cuánticas Disponibles en IBM Quantum**
 """,
     )
     
-    # Crear el agente con el template personalizado
+    # Create the agent with the custom template
     return ReActAgent(
         llm=llm,
         tools=tools,
@@ -429,50 +525,75 @@ async def quantum_status_agent(
     trajectory: Annotated[TrajectoryExtensionServer, TrajectoryExtensionSpec()]
 ):
     """
-    Handler principal del Quantum Status Agent.
+    Main handler for the Quantum Status Agent.
     
-    Este agente consulta el estado de backends y trabajos cuánticos en IBM Quantum.
+    This agent queries the status of backends and quantum jobs on IBM Quantum.
     """
     user_query = get_message_text(input)
     print("=" * 80)
     print(f"📊 [Status Agent] Received query: '{user_query[:100]}...'")
     print("=" * 80)
     
-    # Paso 1: Análisis de la solicitud
+    # Step 1: Request analysis
     yield trajectory.trajectory_metadata(
-        title="🔍 Analizando consulta de estado",
-        content=f"Procesando la consulta del usuario:\n```\n{user_query[:200]}{'...' if len(user_query) > 200 else ''}\n```"
+        title="🔍 Analyzing status query",
+        content=f"Processing user query:\n```\n{user_query[:200]}{'...' if len(user_query) > 200 else ''}\n```"
     )
+
+    job_ids = list(dict.fromkeys(_JOB_ID_PATTERN.findall(user_query)))
+    if len(job_ids) == 1:
+        job_id = job_ids[0]
+        yield trajectory.trajectory_metadata(
+            title="📊 Querying IBM Quantum job",
+            content=f"Retrieving current status for job `{job_id}`...",
+        )
+        try:
+            tool_output = await IBMQuantumJobTool().run({"job_id": job_id, "filter_status": "all"})
+            response = tool_output.get_text_content()
+            if "__QUANTUM_PNG__" in response:
+                response = await _upload_png_and_replace(response)
+            yield trajectory.trajectory_metadata(
+                title="✅ Job data obtained",
+                content="IBM Quantum returned the current job status and available results.",
+            )
+            yield AgentMessage(text=response)
+        except Exception as e:
+            yield trajectory.trajectory_metadata(
+                title="❌ Job query failed",
+                content=f"**Type:** {type(e).__name__}\n**Message:** {explain_error(e)}",
+            )
+            yield AgentMessage(text=f"❌ Error querying job: {explain_error(e)}")
+        return
     
-    # Crear el agente con las instrucciones
+    # Create the agent with instructions
     agent = create_status_agent()
     
-    # Paso 2: Preparación del agente
+    # Step 2: Agent preparation
     yield trajectory.trajectory_metadata(
-        title="🤖 Preparando agente de consultas",
-        content=f"**Configuración:**\n- Modelo: Mistral Small 3.1\n- Herramientas: 4 (Status, Info, Job, Comparison)\n- Memoria: Ilimitada"
+        title="🤖 Preparing query agent",
+        content=f"**Configuration:**\n- Model: {model_name('STATUS')}\n- Tools: 4 (Status, Info, Job, Comparison)\n- Memory: Unlimited"
     )
     
-    # Construir el prompt con las instrucciones del sistema
+    # Build prompt with system instructions
     full_prompt = f"{STATUS_INSTRUCTIONS}\n\n---\n\nUSER REQUEST:\n{user_query}"
     
-    # Paso 3: Consulta de datos
+    # Step 3: Data query
     yield trajectory.trajectory_metadata(
-        title="⚙️ Consultando IBM Quantum",
-        content="El agente está consultando datos en tiempo real de IBM Quantum..."
+        title="⚙️ Querying IBM Quantum",
+        content="Agent is querying real-time data from IBM Quantum..."
     )
     
-    # Ejecutar el agente
+    # Execute the agent
     try:
-        run_context = await agent.run(full_prompt)
+        run_context = await run_agent_with_retries(agent, full_prompt)
         
-        # Actualizar trayectoria con progreso
+        # Update trajectory with progress
         yield trajectory.trajectory_metadata(
-            title="✅ Datos obtenidos",
-            content="- [x] Consulta completada\n- [x] Datos procesados\n- [x] Respuesta formateada"
+            title="✅ Data obtained",
+            content="- [x] Query completed\n- [x] Data processed\n- [x] Response formatted"
         )
         
-        # Extraer la respuesta
+        # Extract the response
         response = ""
         if hasattr(run_context, 'output') and run_context.output:
             output = run_context.output
@@ -489,38 +610,59 @@ async def quantum_status_agent(
         else:
             response = str(run_context)
         
-        # Asegurar que response sea string
+        # Ensure response is string
         if not isinstance(response, str):
             response = str(response)
         
-        # Paso 4: Respuesta generada
+        # Process PNG markers: upload images and replace with agentstack:// URLs
+        # Check for explicit markers OR recent PNGs in temporary directory
+        has_png_marker = '__QUANTUM_PNG__' in response
+        has_recent_pngs = (
+            os.path.exists(_QUANTUM_PNG_DIR) and
+            any(
+                f.endswith('.png') and (time.time() - os.path.getmtime(os.path.join(_QUANTUM_PNG_DIR, f))) < 120
+                for f in os.listdir(_QUANTUM_PNG_DIR)
+            )
+        )
+        if has_png_marker or has_recent_pngs:
+            yield trajectory.trajectory_metadata(
+                title="🖼️ Generating visualizations",
+                content="Uploading PNG histograms to file server..."
+            )
+            try:
+                response = await _upload_png_and_replace(response)
+                print(f"[Status Agent] PNG markers processed successfully")
+            except Exception as png_err:
+                print(f"[Status Agent] Error processing PNG markers: {png_err}")
+        
+        # Step 4: Response generated
         yield trajectory.trajectory_metadata(
-            title="✅ Respuesta lista",
-            content=f"Datos de IBM Quantum obtenidos ({len(response)} caracteres)\n\n**Contenido:**\n- Estado de backends\n- Información técnica\n- Resultados de trabajos"
+            title="✅ Response ready",
+            content=f"IBM Quantum data obtained ({len(response)} characters)\n\n**Content:**\n- Backend status\n- Technical information\n- Job results"
         )
         
         print("=" * 80)
         print(f"✅ [Status Agent] Response generated ({len(response)} chars)")
         print("=" * 80)
         
-        # Crear el mensaje de respuesta
+        # Create response message
         response_message = AgentMessage(text=response)
         
-        # Yield la respuesta al usuario
+        # Yield response to user
         yield response_message
         
     except Exception as e:
         import traceback
-        error_msg = f"❌ Error en Status Agent: {str(e)}"
-        error_details = f"\n\nTipo de error: {type(e).__name__}\n"
-        error_details += f"Detalles: {str(e)}\n\n"
+        error_msg = f"❌ Error in Status Agent: {explain_error(e)}"
+        error_details = f"\n\nError type: {type(e).__name__}\n"
+        error_details += f"Details: {explain_error(e)}\n\n"
         error_details += "Traceback:\n"
         error_details += traceback.format_exc()
-        
-        # Trayectoria de error
+
+        # Error trajectory
         yield trajectory.trajectory_metadata(
-            title="❌ Error detectado",
-            content=f"**Tipo:** {type(e).__name__}\n**Mensaje:** {str(e)}\n\nConsulta los logs para más detalles."
+            title="❌ Error detected",
+            content=f"**Type:** {type(e).__name__}\n**Message:** {explain_error(e)}\n\nCheck logs for more details."
         )
         
         print("=" * 80)
@@ -528,10 +670,10 @@ async def quantum_status_agent(
         print(error_details)
         print("=" * 80)
         
-        yield AgentMessage(text=error_msg + error_details)
+        yield AgentMessage(text=error_msg)
 
 def run():
-    """Inicia el servidor del Quantum Status Agent con almacenamiento persistente"""
+    """Starts the Quantum Status Agent server with persistent storage"""
     port = int(os.getenv("STATUS_PORT", 8002))
     host = os.getenv("STATUS_HOST", "127.0.0.1")
     
@@ -539,7 +681,7 @@ def run():
     print("🚀 Starting Quantum Status Agent Server (AgentStack)")
     print("=" * 80)
     print(f"  📊 Agent: Quantum Status Agent")
-    print(f"  🤖 Model: {os.getenv('WATSONX_STATUS_MODEL', 'mistralai/mistral-small-3-1-24b-instruct-2503')}")
+    print(f"  🤖 Model: {model_name('STATUS')}")
     print(f"  🌐 Host: {host}")
     print(f"  🔌 Port: {port}")
     print(f"  🛠️  Tools: 4 (Status, Info, Job, Job Comparison)")
@@ -547,11 +689,11 @@ def run():
     print(f"  🎯 Trajectory: Visualization enabled")
     print(f"  📚 Skills: Backend Status, Technical Info, Job Results, Comparison")
     print("=" * 80)
-    print("\n💡 Tip: Este agente es invocado por el Operations Agent (puerto 8000)")
-    print("   para consultar estado de backends y trabajos cuánticos.")
+    print("\n💡 Tip: This agent is invoked by the Lab Agent (port 8000)")
+    print("   to query backend status and quantum jobs.")
     print("=" * 80)
     
-    # Ejecutar servidor sin PlatformContextStore (invocado vía A2A)
+    # Run server without PlatformContextStore (invoked via A2A)
     server.run(
         host=host,
         port=port

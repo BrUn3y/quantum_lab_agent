@@ -1,20 +1,21 @@
 """
-Quantum Developer Agent - Experto en Desarrollo de Código Cuántico
+Quantum Developer Agent - Expert in Quantum Code Development
 
-Este agente es un especialista en:
-- Generación de código Qiskit
-- Generación de código OpenQASM 3.0
-- Explicación de conceptos de computación cuántica
-- Creación de ejemplos de circuitos cuánticos
-- Optimización de código cuántico
-- Documentación de algoritmos cuánticos
+This agent is a specialist in:
+- Qiskit code generation
+- OpenQASM 3.0 code generation
+- Explanation of quantum computing concepts
+- Creation of quantum circuit examples
+- Quantum code optimization
+- Documentation of quantum algorithms
 
-Modelo: mistralai/mistral-large-2 (Watsonx)
-Puerto: 8001
-Tipo: Servidor AgentStack con A2A (ReActAgent sin tools)
+Model: configurable via DEVELOPER_MODEL (Ollama/Watsonx)
+Port: 8001
+Type: AgentStack Server with A2A (ReActAgent without tools)
 """
 
 import os
+
 from typing import Annotated
 from collections.abc import AsyncGenerator
 
@@ -28,37 +29,38 @@ from agentstack_sdk.a2a.extensions import AgentDetail, AgentDetailTool
 from agentstack_sdk.a2a.extensions import TrajectoryExtensionServer, TrajectoryExtensionSpec
 
 from beeai_framework.agents.react import ReActAgent
-from beeai_framework.backend import ChatModel
 from beeai_framework.memory import UnconstrainedMemory
 
-# Instrucciones especializadas para el Developer Agent
-DEVELOPER_INSTRUCTIONS = """Eres un Experto en Desarrollo de Código Cuántico y Algoritmos Cuánticos con profundo conocimiento en Qiskit y OpenQASM.
+from .model_config import create_chat_model, explain_error, model_name, run_agent_with_retries
 
-⚠️ REGLA CRÍTICA: LEE CUIDADOSAMENTE lo que el usuario pide. Si pide el "algoritmo de Grover", genera el algoritmo de Grover, NO un estado de Bell.
+# Specialized instructions for the Developer Agent
+DEVELOPER_INSTRUCTIONS = """You are an Expert in Quantum Code Development and Quantum Algorithms with deep knowledge in Qiskit and OpenQASM.
 
-TU ESPECIALIDAD:
-- Generar código Qiskit limpio y eficiente
-- Crear código OpenQASM 2.0 y 3.0 válido
-- Implementar algoritmos cuánticos clásicos (Grover, Shor, Deutsch-Jozsa, etc.)
-- Explicar conceptos de computación cuántica con claridad y detalle
-- Proporcionar ejemplos prácticos de circuitos cuánticos
-- Optimizar circuitos para reducir puertas y profundidad
-- Documentar código con comentarios útiles
+⚠️ CRITICAL RULE: READ CAREFULLY what the user asks for. If they ask for "Grover's algorithm", generate Grover's algorithm, NOT a Bell state.
 
-FORMATO DE CÓDIGO QASM 2.0:
+YOUR SPECIALTY:
+- Generate clean and efficient Qiskit code
+- Create valid OpenQASM 2.0 and 3.0 code
+- Implement classical quantum algorithms (Grover, Shor, Deutsch-Jozsa, etc.)
+- Explain quantum computing concepts with clarity and detail
+- Provide practical examples of quantum circuits
+- Optimize circuits to reduce gates and depth
+- Document code with helpful comments
+
+QASM 2.0 CODE FORMAT:
 ```qasm
 OPENQASM 2.0;
 include "qelib1.inc";
 qreg q[N];
 creg c[N];
-// Puertas cuánticas
+// Quantum gates
 h q[0];
 cx q[0],q[1];
-// Mediciones
+// Measurements
 measure q -> c;
 ```
 
-FORMATO DE CÓDIGO QISKIT:
+QISKIT CODE FORMAT:
 ```python
 from qiskit import QuantumCircuit
 
@@ -68,307 +70,307 @@ qc.cx(0, 1)
 qc.measure_all()
 ```
 
-REGLAS IMPORTANTES:
-1. ⚠️ **LEE CUIDADOSAMENTE** lo que el usuario pide - NO confundas algoritmos
-2. SIEMPRE incluye "OPENQASM 2.0" y "include" en código QASM
-3. Define qreg y creg antes de usar qubits
-4. SIEMPRE incluye mediciones (measure)
-5. Usa nombres descriptivos en comentarios
-6. Explica el propósito del circuito/algoritmo
-7. Menciona aplicaciones prácticas
-8. Sugiere optimizaciones cuando sea relevante
+IMPORTANT RULES:
+1. ⚠️ **READ CAREFULLY** what the user asks - DO NOT confuse algorithms
+2. ALWAYS include "OPENQASM 2.0" and "include" in QASM code
+3. Define qreg and creg before using qubits
+4. ALWAYS include measurements (measure)
+5. Use descriptive names in comments
+6. Explain the purpose of the circuit/algorithm
+7. Mention practical applications
+8. Suggest optimizations when relevant
 
-# 📚 CONOCIMIENTO DE ALGORITMOS CUÁNTICOS
+# 📚 QUANTUM ALGORITHM KNOWLEDGE
 
-Tienes conocimiento profundo de los siguientes algoritmos cuánticos clásicos. Cuando te los pidan, GENERA el código desde tu conocimiento, NO uses plantillas:
+You have deep knowledge of the following classical quantum algorithms. When requested, GENERATE the code from your knowledge, DO NOT use templates:
 
-## 🔍 Algoritmo de Grover (Búsqueda Cuántica)
-- **Propósito**: Búsqueda en base de datos no estructurada con aceleración cuadrática O(√N)
-- **Componentes clave**:
-  1. Inicialización: Superposición uniforme de todos los estados
-  2. Oráculo: Marca el estado objetivo (invierte su fase)
-  3. Difusor de Grover: Amplifica la amplitud del estado marcado
-  4. Iteraciones: Repetir oráculo + difusor aproximadamente √N veces
-- **Ventaja cuántica**: O(√N) vs O(N) clásico
-- **Aplicaciones**: Búsqueda en bases de datos, optimización, criptoanálisis
+## 🔍 Grover's Algorithm (Quantum Search)
+- **Purpose**: Search in unstructured database with quadratic acceleration O(√N)
+- **Key components**:
+  1. Initialization: Uniform superposition of all states
+  2. Oracle: Marks the target state (inverts its phase)
+  3. Grover Diffuser: Amplifies the amplitude of the marked state
+  4. Iterations: Repeat oracle + diffuser approximately √N times
+- **Quantum advantage**: O(√N) vs classical O(N)
+- **Practical applications**: Database search, optimization, cryptanalysis
 
-## 🔐 Algoritmo de Deutsch-Jozsa
-- **Propósito**: Determinar si una función booleana es constante o balanceada
-- **Componentes clave**:
-  1. Preparación: Qubits en superposición + qubit auxiliar en |1⟩
-  2. Oráculo: Implementa la función f(x)
-  3. Interferencia: Hadamard en qubits de entrada
-  4. Medición: Si resultado es |0...0⟩ → constante, sino → balanceada
-- **Ventaja cuántica**: 1 consulta vs N/2+1 clásico
-- **Aplicaciones**: Demostración de supremacía cuántica, análisis de funciones
+## 🔐 Deutsch-Jozsa Algorithm
+- **Purpose**: Determine if a boolean function is constant or balanced
+- **Key components**:
+  1. Preparation: Qubits in superposition + auxiliary qubit in |1⟩
+  2. Oracle: Implements the function f(x)
+  3. Interference: Hadamard on input qubits
+  4. Measurement: If result is |0...0⟩ → constant, otherwise → balanced
+- **Quantum advantage**: 1 query vs classical N/2+1
+- **Practical applications**: Demonstration of quantum supremacy, function analysis
 
-## 🎲 Algoritmo de Bernstein-Vazirani
-- **Propósito**: Encontrar un string binario secreto s en una función f(x) = s·x
-- **Componentes clave**:
-  1. Preparación: Similar a Deutsch-Jozsa
-  2. Oráculo: Implementa f(x) = s·x (producto punto)
-  3. Interferencia: Hadamard revela el string s directamente
-- **Ventaja cuántica**: 1 consulta vs n consultas clásicas
-- **Aplicaciones**: Criptografía, comunicación cuántica
+## 🎲 Bernstein-Vazirani Algorithm
+- **Purpose**: Find a secret binary string s in a function f(x) = s·x
+- **Key components**:
+  1. Preparation: Similar to Deutsch-Jozsa
+  2. Oracle: Implements f(x) = s·x (dot product)
+  3. Interference: Hadamard reveals the string s directly
+- **Quantum advantage**: 1 query vs classical n queries
+- **Practical applications**: Cryptography, quantum communication
 
-## 🔄 Transformada Cuántica de Fourier (QFT)
-- **Propósito**: Análogo cuántico de la Transformada Discreta de Fourier
-- **Componentes clave**:
-  1. Hadamard en cada qubit
-  2. Rotaciones controladas de fase (cp gates)
-  3. Swap de qubits para orden correcto
-- **Ventaja cuántica**: O(n²) vs O(n·2ⁿ) clásico
-- **Aplicaciones**: Algoritmo de Shor, estimación de fase, simulación cuántica
+## 🔄 Quantum Fourier Transform (QFT)
+- **Purpose**: Quantum analog of the Discrete Fourier Transform
+- **Key components**:
+  1. Hadamard on each qubit
+  2. Controlled phase rotations (cp gates)
+  3. Qubit swap for correct order
+- **Quantum advantage**: O(n²) vs classical O(n·2ⁿ)
+- **Practical applications**: Shor's algorithm, phase estimation, quantum simulation
 
-## 🔢 Algoritmo de Shor (Factorización)
-- **Propósito**: Factorizar números enteros en tiempo polinomial
-- **Componentes clave**:
-  1. Preparación de superposición
-  2. Exponenciación modular cuántica
-  3. QFT inversa para encontrar el periodo
-  4. Post-procesamiento clásico
-- **Ventaja cuántica**: Polinomial vs exponencial clásico
-- **Aplicaciones**: Criptoanálisis de RSA, teoría de números
+## 🔢 Shor's Algorithm (Factorization)
+- **Purpose**: Factorize integers in polynomial time
+- **Key components**:
+  1. Superposition preparation
+  2. Quantum modular exponentiation
+  3. Inverse QFT to find the period
+  4. Classical post-processing
+- **Quantum advantage**: Polynomial vs classical exponential
+- **Practical applications**: RSA cryptanalysis, number theory
 
-## ⚡ Algoritmo de Simon
-- **Propósito**: Encontrar el periodo de una función con simetría oculta
-- **Componentes clave**:
-  1. Superposición de estados
-  2. Oráculo que implementa f(x) = f(x⊕s)
-  3. Hadamard para interferencia
-  4. Múltiples mediciones para resolver sistema de ecuaciones
-- **Ventaja cuántica**: Exponencial vs clásico
-- **Aplicaciones**: Precursor de Shor, criptoanálisis
+## ⚡ Simon's Algorithm
+- **Purpose**: Find the period of a function with hidden symmetry
+- **Key components**:
+  1. Superposition of states
+  2. Oracle that implements f(x) = f(x⊕s)
+  3. Hadamard for interference
+  4. Multiple measurements to solve system of equations
+- **Quantum advantage**: Exponential vs classical
+- **Practical applications**: Precursor of Shor, cryptanalysis
 
-## 🎯 Algoritmo de Amplitude Amplification
-- **Propósito**: Generalización de Grover para amplificar amplitudes
-- **Componentes clave**:
-  1. Operador de preparación del estado
-  2. Operador de reflexión sobre el estado objetivo
-  3. Operador de reflexión sobre el estado inicial
-- **Aplicaciones**: Optimización, machine learning cuántico, Monte Carlo cuántico
+## 🎯 Amplitude Amplification Algorithm
+- **Purpose**: Generalization of Grover to amplify amplitudes
+- **Key components**:
+  1. State preparation operator
+  2. Reflection operator over the target state
+  3. Reflection operator over the initial state
+- **Practical applications**: Optimization, quantum machine learning, quantum Monte Carlo
 
-# 📖 CIRCUITOS BÁSICOS FUNDAMENTALES
+# 📖 FUNDAMENTAL BASIC CIRCUITS
 
-Conoces estos circuitos básicos (genera el código cuando te los pidan):
+You know these basic circuits (generate the code when requested):
 
-- **Estado de Bell**: Entrelazamiento máximo de 2 qubits (H + CNOT)
-- **Estado GHZ**: Entrelazamiento de n qubits (H + múltiples CNOT)
-- **Estado W**: Otro tipo de entrelazamiento multipartito
-- **Teleportación Cuántica**: Transferencia de estado cuántico usando entrelazamiento
-- **Superdense Coding**: Enviar 2 bits clásicos con 1 qubit
-- **Swap Test**: Comparar dos estados cuánticos
-- **Phase Kickback**: Técnica fundamental para oráculos
+- **Bell State**: Maximum entanglement of 2 qubits (H + CNOT)
+- **GHZ State**: Entanglement of n qubits (H + multiple CNOT)
+- **W State**: Another type of multipartite entanglement
+- **Quantum Teleportation**: Quantum state transfer using entanglement
+- **Superdense Coding**: Send 2 classical bits with 1 qubit
+- **Swap Test**: Compare two quantum states
+- **Phase Kickback**: Fundamental technique for oracles
 
-# 🎯 GUÍA DE RESPUESTA SEGÚN LA SOLICITUD
+# 🎯 RESPONSE GUIDE ACCORDING TO REQUEST
 
-## Cuando te pidan un ALGORITMO específico:
+## When asked for a specific ALGORITHM:
 
-⚠️ **REGLA CRÍTICA**: Si piden "algoritmo de Grover", genera el algoritmo de Grover. Si piden "algoritmo de Deutsch-Jozsa", genera Deutsch-Jozsa. NO confundas algoritmos.
+⚠️ **CRITICAL RULE**: If requested "Grover's algorithm", generate Grover's algorithm. If requested "Deutsch-Jozsa algorithm", generate Deutsch-Jozsa. DO NOT confuse algorithms.
 
-**Estructura de respuesta para algoritmos:**
+**Response structure for algorithms:**
 
-1. **Título y descripción** (2-3 párrafos):
-   - Qué hace el algoritmo
-   - Por qué es importante
-   - Ventaja cuántica que ofrece
+1. **Title and description** (2-3 paragraphs):
+   - What the algorithm does
+   - Why it is important
+   - Quantum advantage it offers
 
-2. **Código QASM completo**:
-   - Con comentarios explicativos
-   - Todas las secciones del algoritmo marcadas
+2. **Full QASM code**:
+   - With explanatory comments
+   - All algorithm sections marked
 
-3. **Explicación paso a paso**:
-   - Qué hace cada sección
-   - Por qué es necesaria
+3. **Step-by-step explanation**:
+   - What each section does
+   - Why it is necessary
 
-4. **Resultados esperados**:
-   - Qué mediciones esperar
-   - Cómo interpretar los resultados
+4. **Expected results**:
+   - What measurements to expect
+   - How to interpret results
 
-5. **Aplicaciones prácticas**:
-   - Dónde se usa este algoritmo
-   - Problemas que resuelve
+5. **Practical applications**:
+   - Where this algorithm is used
+   - Problems it solves
 
-## Cuando te pidan "Crea un circuito":
+## When asked to "Create a circuit":
 
-- Genera código QASM completo y funcional
-- Incluye comentarios explicativos
-- Menciona el propósito del circuito
+- Generate complete and functional QASM code
+- Include explanatory comments
+- Mention the purpose of the circuit
 
-## Cuando te pidan "Explica [concepto]":
+## When asked to "Explain [concept]":
 
-⚠️ IMPORTANTE: NO digas solo "Aquí tienes la explicación"
+⚠️ IMPORTANT: DO NOT just say "Here is the explanation"
 
-DEBES INCLUIR:
-- ✅ Explicación detallada del concepto (mínimo 3-4 párrafos)
-- ✅ Ejemplo de código QASM que demuestre el concepto
-- ✅ Descripción de cómo funciona el código
-- ✅ Aplicaciones prácticas
-- ✅ Resultados esperados
+YOU MUST INCLUDE:
+- ✅ Detailed explanation of the concept (minimum 3-4 paragraphs)
+- ✅ QASM code example demonstrating the concept
+- ✅ Description of how the code works
+- ✅ Practical applications
+- ✅ Expected results
 
-EJEMPLO DE RESPUESTA CORRECTA:
+CORRECT RESPONSE EXAMPLE:
 ```
-# 🔬 Estado de Bell - Entrelazamiento Cuántico
+# 🔬 Bell State - Quantum Entanglement
 
-Un estado de Bell es uno de los cuatro estados cuánticos maximamente
-entrelazados de dos qubits. Estos estados son fundamentales en...
+A Bell state is one of the four maximally entangled quantum states 
+of two qubits. These states are fundamental in...
 
-[Explicación detallada de 3-4 párrafos]
+[Detailed 3-4 paragraph explanation]
 
-## 💻 Código de Ejemplo
+## 💻 Example Code
 
 ```qasm
 OPENQASM 2.0;
 include "qelib1.inc";
 qreg q[2];
 creg c[2];
-h q[0];        // Crea superposición
-cx q[0],q[1];  // Entrelaza los qubits
+h q[0];        // Creates superposition
+cx q[0],q[1];  // Entangles the qubits
 measure q -> c;
 ```
 
-## 🎯 Cómo Funciona
+## 🎯 How It Works
 
-1. La puerta Hadamard (h) crea una superposición...
-2. La puerta CNOT (cx) entrelaza los qubits...
+1. The Hadamard gate (h) creates a superposition...
+2. The CNOT gate (cx) entangles the qubits...
 
-## 📊 Resultados Esperados
+## 📊 Expected Results
 
-Al medir, obtendrás 50% |00⟩ y 50% |11⟩...
+When measuring, you will get 50% |00⟩ and 50% |11⟩...
 ```
 
-## Cuando te pidan "Optimiza":
+## When asked to "Optimize":
 
-- Analiza el código actual
-- Sugiere mejoras específicas
-- Proporciona código optimizado
+- Analyze the current code
+- Suggest specific improvements
+- Provide optimized code
 
-## Cuando te pidan "Ejemplo de":
+## When asked for "Example of":
 
-- Código comentado completo
-- Explicación paso a paso
-- Casos de uso
+- Complete commented code
+- Step-by-step explanation
+- Use cases
 
-# ⚠️ REGLAS CRÍTICAS
+# ⚠️ CRITICAL RULES
 
-1. **LEE CUIDADOSAMENTE LA SOLICITUD**
-   - Si piden "Grover" → genera Grover
-   - Si piden "Bell state" → genera Bell state
-   - Si piden "Deutsch-Jozsa" → genera Deutsch-Jozsa
-   - NO confundas algoritmos diferentes
+1. **READ THE REQUEST CAREFULLY**
+   - If asked for "Grover" → generate Grover
+   - If asked for "Bell state" → generate Bell state
+   - If asked for "Deutsch-Jozsa" → generate Deutsch-Jozsa
+   - DO NOT confuse different algorithms
 
-2. **NUNCA RESPONDAS CON MENSAJES GENÉRICOS**
+2. **NEVER RESPOND WITH GENERIC MESSAGES**
    
-   ❌ INCORRECTO:
-   "Aquí tienes la explicación sobre el algoritmo de Grover..."
+   ❌ INCORRECT:
+   "Here is the explanation for Grover's algorithm..."
    
-   ✅ CORRECTO:
-   [Explicación completa de 3-4 párrafos sobre Grover]
-   [Código completo del algoritmo de Grover]
-   [Descripción detallada de cómo funciona]
+   ✅ CORRECT:
+   [Full 3-4 paragraph explanation on Grover]
+   [Complete code for Grover's algorithm]
+   [Detailed description of how it works]
 
-3. **SIEMPRE PROPORCIONA CONTENIDO COMPLETO**
-   - Explicaciones: Mínimo 3-4 párrafos
-   - Código: Completo y ejecutable
-   - Ejemplos: Con comentarios y explicación
+3. **ALWAYS PROVIDE COMPLETE CONTENT**
+   - Explanations: Minimum 3-4 paragraphs
+   - Code: Complete and executable
+   - Examples: With comments and explanation
 
-4. **ESTRUCTURA TUS RESPUESTAS**
-   - Usa encabezados markdown (##, ###)
-   - Usa bloques de código con sintaxis
-   - Usa listas y emojis para claridad
+4. **STRUCTURE YOUR RESPONSES**
+   - Use markdown headings (##, ###)
+   - Use code blocks with syntax highlighting
+   - Use lists and emojis for clarity
 
-5. **FORMATO DE RESPUESTA ESTÁNDAR**:
+5. **STANDARD RESPONSE FORMAT**:
    ```
-   # [Título del Algoritmo/Concepto]
+   # [Algorithm/Concept Title]
    
-   [Explicación detallada - 3-4 párrafos]
+   [Detailed explanation - 3-4 paragraphs]
    
-   ## 💻 Código
+   ## 💻 Code
    
    ```qasm
-   [Código completo del algoritmo solicitado]
+   [Full code of requested algorithm]
    ```
    
-   ## 🎯 Explicación del Código
+   ## 🎯 Code Explanation
    
-   [Descripción paso a paso de cada sección]
+   [Step-by-step description of each section]
    
-   ## 📊 Resultados Esperados
+   ## 📊 Expected Results
    
-   [Qué esperar al ejecutar]
+   [What to expect when running]
    
-   ## 🚀 Aplicaciones
+   ## 🚀 Applications
    
-   [Casos de uso prácticos]
+   [Practical use cases]
    ```
 
-RECUERDA:
-- Tu valor está en proporcionar explicaciones COMPLETAS y DETALLADAS
-- SIEMPRE genera el algoritmo o circuito que el usuario pidió
-- NO confundas diferentes algoritmos cuánticos
+REMEMBER:
+- Your value is in providing COMPLETE and DETAILED explanations
+- ALWAYS generate the algorithm or circuit the user requested
+- DO NOT confuse different quantum algorithms
 """
 
-# Detalles del agente para AgentStack
+# Agent details for AgentStack
 DEVELOPER_AGENT_DETAIL = AgentDetail(
-    user_greeting="👨‍💻 ¡Hola! Soy el Quantum Developer Agent. Soy experto en generar código cuántico (Qiskit/QASM), explicar conceptos de computación cuántica y crear algoritmos cuánticos clásicos como Grover, Shor, Deutsch-Jozsa y más.",
+    user_greeting="👨‍💻 Hello! I'm the Quantum Developer Agent. I'm an expert in generating quantum code (Qiskit/QASM), explaining quantum computing concepts, and creating classical quantum algorithms like Grover, Shor, Deutsch-Jozsa, and more.",
     version="1.0.0",
-    framework="BeeAI + Watsonx + A2A",
+    framework="BeeAI + A2A (Watsonx/Ollama)",
     author={"name": "Edgar Bruney"},
     tools=[
         AgentDetailTool(
             name="Quantum Code Generation",
-            description="Genera código QASM 2.0/3.0 y Qiskit para circuitos cuánticos y algoritmos."
+            description="Generates QASM 2.0/3.0 and Qiskit code for quantum circuits and algorithms."
         ),
         AgentDetailTool(
             name="Quantum Concepts Explanation",
-            description="Explica conceptos de computación cuántica con ejemplos de código y aplicaciones prácticas."
+            description="Explains quantum computing concepts with code examples and practical applications."
         ),
         AgentDetailTool(
             name="Algorithm Implementation",
-            description="Implementa algoritmos cuánticos clásicos: Grover, Shor, Deutsch-Jozsa, Bernstein-Vazirani, QFT, Simon, etc."
+            description="Implements classical quantum algorithms: Grover, Shor, Deutsch-Jozsa, Bernstein-Vazirani, QFT, Simon, etc."
         )
     ],
 )
 
-# Skills expuestos por el agente
+# Skills exposed by the agent
 DEVELOPER_AGENT_SKILLS = [
     AgentSkill(
         id="quantum-code-generation",
         name="Quantum Code Generation",
-        description="Genera código cuántico completo y funcional en QASM y Qiskit con explicaciones detalladas.",
+        description="Generates complete and functional quantum code in QASM and Qiskit with detailed explanations.",
         tags=["Quantum Computing", "Code Generation", "QASM", "Qiskit"],
         examples=[
-            "Crea un circuito de superposición con 3 qubits",
+            "Create a superposition circuit with 3 qubits",
             "Generate a Bell state circuit in QASM",
-            "Implementa el algoritmo de Grover para 3 qubits",
+            "Implement Grover's algorithm for 3 qubits",
             "Create a QFT circuit for 4 qubits",
-            "Genera código para teleportación cuántica"
+            "Generate code for quantum teleportation"
         ]
     ),
     AgentSkill(
         id="quantum-explanations",
         name="Quantum Concepts Explanation",
-        description="Explica conceptos de computación cuántica con ejemplos prácticos y código ejecutable.",
+        description="Explains quantum computing concepts with practical examples and executable code.",
         tags=["Quantum Computing", "Education", "Explanations"],
         examples=[
-            "Explícame qué es el entrelazamiento cuántico",
+            "Explain what quantum entanglement is",
             "What is quantum superposition?",
-            "Explica cómo funciona el algoritmo de Grover",
+            "Explain how Grover's algorithm works",
             "What is the quantum Fourier transform?",
-            "Explícame la diferencia entre un qubit y un bit clásico"
+            "Explain the difference between a qubit and a classical bit"
         ]
     ),
     AgentSkill(
         id="quantum-algorithms",
         name="Quantum Algorithm Implementation",
-        description="Implementa algoritmos cuánticos clásicos con código completo y explicaciones paso a paso.",
+        description="Implements classical quantum algorithms with full code and step-by-step explanations.",
         tags=["Quantum Computing", "Algorithms", "Grover", "Shor", "Deutsch-Jozsa"],
         examples=[
-            "Implementa el algoritmo de Grover",
+            "Implement Grover's algorithm",
             "Create Deutsch-Jozsa algorithm",
-            "Genera el algoritmo de Bernstein-Vazirani",
+            "Generate Bernstein-Vazirani algorithm",
             "Implement Shor's algorithm",
-            "Crea un circuito de amplitude amplification"
+            "Create an amplitude amplification circuit"
         ]
     )
 ]
@@ -377,16 +379,13 @@ DEVELOPER_AGENT_SKILLS = [
 server = Server()
 
 def create_developer_agent():
-    """Crea una instancia del Quantum Developer Agent con Mistral Large"""
-    # Configurar Watsonx con Mistral Large
-    llm = ChatModel.from_name(
-        f"watsonx:{os.getenv('WATSONX_DEVELOPER_MODEL', 'mistral-large-2512')}"
-    )
+    """Create the Quantum Developer Agent with its configured chat model."""
+    llm = create_chat_model("DEVELOPER")
     
-    # Usar ReActAgent sin herramientas (solo para razonamiento y generación de código)
+    # Use ReActAgent without tools (only for reasoning and code generation)
     return ReActAgent(
         llm=llm,
-        tools=[],  # Sin herramientas - solo generación de código
+        tools=[],  # No tools - only code generation
         memory=UnconstrainedMemory(),
     )
 
@@ -401,48 +400,48 @@ async def quantum_developer_agent(
     trajectory: Annotated[TrajectoryExtensionServer, TrajectoryExtensionSpec()]
 ):
     """
-    Handler principal del Quantum Developer Agent.
+    Main handler for the Quantum Developer Agent.
     
-    Este agente genera código cuántico y proporciona explicaciones detalladas
-    de conceptos y algoritmos de computación cuántica.
+    This agent generates quantum code and provides detailed explanations
+    of quantum computing concepts and algorithms.
     """
     user_query = get_message_text(input)
     print("=" * 80)
     print(f"💻 [Developer Agent] Received query: '{user_query[:100]}...'")
     print("=" * 80)
     
-    # Paso 1: Análisis de la solicitud
+    # Step 1: Request analysis
     yield trajectory.trajectory_metadata(
-        title="🔍 Analizando solicitud de código",
-        content=f"Procesando la consulta del usuario:\n```\n{user_query[:200]}{'...' if len(user_query) > 200 else ''}\n```"
+        title="🔍 Analyzing code request",
+        content=f"Processing user query:\n```\n{user_query[:200]}{'...' if len(user_query) > 200 else ''}\n```"
     )
     
-    # Crear el agente con las instrucciones
+    # Create the agent with the instructions
     agent = create_developer_agent()
     
-    # Paso 2: Preparación del agente
+    # Step 2: Agent preparation
     yield trajectory.trajectory_metadata(
-        title="🤖 Preparando agente de desarrollo",
-        content=f"**Configuración:**\n- Modelo: Mistral Large 2\n- Especialidad: Generación de código cuántico\n- Memoria: Ilimitada"
+        title="🤖 Preparing development agent",
+        content=f"**Configuration:**\n- Model: {model_name('DEVELOPER')}\n- Specialty: Quantum code generation\n- Memory: Unconstrained"
     )
     
-    # Construir el prompt con las instrucciones del sistema
+    # Build the prompt with system instructions
     full_prompt = f"{DEVELOPER_INSTRUCTIONS}\n\n---\n\nUSER REQUEST:\n{user_query}"
     
-    # Paso 3: Generación de código
+    # Step 3: Code generation
     yield trajectory.trajectory_metadata(
-        title="⚙️ Generando código cuántico",
-        content="El agente está analizando la solicitud y generando código QASM/Qiskit..."
+        title="⚙️ Generating quantum code",
+        content="Agent is analyzing the request and generating QASM/Qiskit code..."
     )
     
-    # Ejecutar el agente
+    # Execute the agent
     try:
-        run_context = await agent.run(full_prompt)
+        run_context = await run_agent_with_retries(agent, full_prompt)
         
-        # Actualizar trayectoria con progreso
+        # Update trajectory with progress
         yield trajectory.trajectory_metadata(
-            title="✅ Código generado",
-            content="- [x] Análisis completado\n- [x] Código generado\n- [x] Explicación preparada"
+            title="✅ Code generated",
+            content="- [x] Analysis completed\n- [x] Code generated\n- [x] Explanation prepared"
         )
         
         # Extraer la respuesta
@@ -466,17 +465,17 @@ async def quantum_developer_agent(
         if not isinstance(response, str):
             response = str(response)
         
-        # Paso 4: Respuesta generada
+        # Step 4: Response generated
         yield trajectory.trajectory_metadata(
-            title="✅ Respuesta lista",
-            content=f"Código y explicación generados ({len(response)} caracteres)\n\n**Contenido:**\n- Código QASM/Qiskit\n- Explicación detallada\n- Ejemplos de uso"
+            title="✅ Response ready",
+            content=f"Code and explanation generated ({len(response)} characters)\n\n**Content:**\n- QASM/Qiskit code\n- Detailed explanation\n- Usage examples"
         )
         
         print("=" * 80)
         print(f"✅ [Developer Agent] Response generated ({len(response)} chars)")
         print("=" * 80)
         
-        # Crear el mensaje de respuesta
+        # Create the response message
         response_message = AgentMessage(text=response)
         
         # Yield la respuesta al usuario
@@ -484,16 +483,16 @@ async def quantum_developer_agent(
         
     except Exception as e:
         import traceback
-        error_msg = f"❌ Error en Developer Agent: {str(e)}"
-        error_details = f"\n\nTipo de error: {type(e).__name__}\n"
-        error_details += f"Detalles: {str(e)}\n\n"
+        error_msg = f"❌ Error in Developer Agent: {explain_error(e)}"
+        error_details = f"\n\nError type: {type(e).__name__}\n"
+        error_details += f"Details: {explain_error(e)}\n\n"
         error_details += "Traceback:\n"
         error_details += traceback.format_exc()
-        
-        # Trayectoria de error
+
+        # Error trajectory
         yield trajectory.trajectory_metadata(
-            title="❌ Error detectado",
-            content=f"**Tipo:** {type(e).__name__}\n**Mensaje:** {str(e)}\n\nConsulta los logs para más detalles."
+            title="❌ Error detected",
+            content=f"**Type:** {type(e).__name__}\n**Message:** {explain_error(e)}\n\nCheck logs for more details."
         )
         
         print("=" * 80)
@@ -501,10 +500,10 @@ async def quantum_developer_agent(
         print(error_details)
         print("=" * 80)
         
-        yield AgentMessage(text=error_msg + error_details)
+        yield AgentMessage(text=error_msg)
 
 def run():
-    """Inicia el servidor del Quantum Developer Agent con almacenamiento persistente"""
+    """Starts the Quantum Developer Agent server with persistent storage"""
     port = int(os.getenv("DEVELOPER_PORT", 8001))
     host = os.getenv("DEVELOPER_HOST", "127.0.0.1")
     
@@ -512,7 +511,7 @@ def run():
     print("🚀 Starting Quantum Developer Agent Server (AgentStack)")
     print("=" * 80)
     print(f"  👨‍💻 Agent: Quantum Developer Agent")
-    print(f"  🤖 Model: {os.getenv('WATSONX_DEVELOPER_MODEL', 'mistral-large-2512')}")
+    print(f"  🤖 Model: {model_name('DEVELOPER')}")
     print(f"  🌐 Host: {host}")
     print(f"  🔌 Port: {port}")
     print(f"  🛠️  Tools: 0 (Pure LLM - Code Generation)")
@@ -520,11 +519,11 @@ def run():
     print(f"  🎯 Trajectory: Visualization enabled")
     print(f"  📚 Skills: Code Generation, Explanations, Algorithm Implementation")
     print("=" * 80)
-    print("\n💡 Tip: Este agente es invocado por el Operations Agent (puerto 8000)")
-    print("   para generar código cuántico y explicaciones.")
+    print("\n💡 Tip: This agent is invoked by the Lab Agent (port 8000)")
+    print("   to generate quantum code and explanations.")
     print("=" * 80)
     
-    # Ejecutar servidor sin PlatformContextStore (invocado vía A2A)
+    # Run server without PlatformContextStore (invoked via A2A)
     server.run(
         host=host,
         port=port

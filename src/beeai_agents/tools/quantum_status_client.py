@@ -1,9 +1,9 @@
 """
-Quantum Status Client Tool - Cliente A2A para invocar al Quantum Status Agent
+Quantum Status Client Tool - A2A Client to invoke the Quantum Status Agent
 
-Esta herramienta permite al Quantum Operations Agent comunicarse con el
-Quantum Status Agent para solicitar consultas de estado de computadoras
-cuánticas, información de backends y estado de trabajos usando el A2AAgent de BeeAI Framework.
+This tool allows the Quantum Lab Agent to communicate with the
+Quantum Status Agent to request queries about quantum computer status,
+backend information, and job status using the A2AAgent from BeeAI Framework.
 """
 
 from beeai_framework.tools import Tool
@@ -20,24 +20,24 @@ class StatusClientInput(BaseModel):
     """Input schema for Quantum Status Client"""
     query: str = Field(
         description="""
-        Consulta para el Quantum Status Agent. Puede ser:
-        - "¿Qué computadoras cuánticas están disponibles?"
-        - "Dame información de [backend_name]"
-        - "¿Cuál es el estado del trabajo [job_id]?"
-        - "Muéstrame mis trabajos recientes"
-        - "¿Qué trabajos tengo en ejecución?"
-        - "¿Cuál es el backend menos ocupado?"
+        Query for the Quantum Status Agent. Can be:
+        - "What quantum computers are available?"
+        - "Give me information about [backend_name]"
+        - "What is the status of job [job_id]?"
+        - "Show me my recent jobs"
+        - "What jobs do I have running?"
+        - "Which is the least busy backend?"
         
-        El Status Agent interpretará la consulta y usará la herramienta apropiada.
+        The Status Agent will interpret the query and use the appropriate tool.
         """
     )
 
 class QuantumStatusClient(Tool[StatusClientInput]):
     """
-    Cliente A2A para comunicarse con el Quantum Status Agent.
+    A2A Client to communicate with the Quantum Status Agent.
     
-    Este tool permite al Quantum Operations Agent invocar al Status Agent
-    para obtener información sobre computadoras cuánticas, backends y trabajos.
+    This tool allows the Quantum Lab Agent to invoke the Status Agent
+    to get information about quantum computers, backends, and jobs.
     """
     
     @property
@@ -47,53 +47,53 @@ class QuantumStatusClient(Tool[StatusClientInput]):
     @property
     def description(self) -> str:
         return """
-Invoca al Quantum Status Agent para consultas de estado de computadoras cuánticas y trabajos.
+Invokes the Quantum Status Agent for quantum computer and job status queries.
 
-CAPACIDADES DEL STATUS AGENT:
-- Listar computadoras cuánticas disponibles (hardware + simuladores)
-- Obtener información técnica detallada de backends específicos
-- Consultar estado de trabajos (QUEUED, RUNNING, DONE, ERROR)
-- Obtener resultados de trabajos completados
-- Listar trabajos recientes del usuario con filtros
+STATUS AGENT CAPABILITIES:
+- List available quantum computers (hardware + simulators)
+- Get detailed technical information about specific backends
+- Query job status (QUEUED, RUNNING, DONE, ERROR)
+- Get results from completed jobs
+- List user's recent jobs with filters
 
-CUÁNDO USAR ESTA HERRAMIENTA:
-✅ Usuario pregunta "¿qué computadoras hay disponibles?"
-✅ Usuario pregunta "dame información de [backend]"
-✅ Usuario pregunta "¿cuál es el estado del trabajo [job_id]?"
-✅ Usuario pregunta "muéstrame mis trabajos"
-✅ Usuario pregunta "¿qué trabajos tengo en ejecución?"
-✅ Usuario pregunta "¿cuál está menos ocupado?"
-✅ Usuario pregunta "¿cuántos qubits tiene [backend]?"
+WHEN TO USE THIS TOOL:
+✅ User asks "what computers are available?"
+✅ User asks "give me information about [backend]"
+✅ User asks "what is the status of job [job_id]?"
+✅ User asks "show me my jobs"
+✅ User asks "what jobs do I have running?"
+✅ User asks "which is the least busy?"
+✅ User asks "how many qubits does [backend] have?"
 
-❌ NO usar para:
-- Ejecutar circuitos cuánticos (usa ibm_quantum_executor)
-- Generar código QASM/Qiskit (usa quantum_developer_client)
+❌ DO NOT use for:
+- Executing quantum circuits (use ibm_quantum_operator)
+- Generating QASM/Qiskit code (use quantum_developer_client)
 
-EJEMPLOS DE CONSULTAS:
+QUERY EXAMPLES:
 
-1. Listar computadoras disponibles:
-   {"query": "¿Qué computadoras cuánticas están disponibles?"}
+1. List available computers:
+   {"query": "What quantum computers are available?"}
 
-2. Información de backend específico:
-   {"query": "Dame información detallada de ibm_brisbane"}
+2. Specific backend information:
+   {"query": "Give me detailed information about ibm_brisbane"}
 
-3. Estado de un trabajo:
-   {"query": "¿Cuál es el estado del trabajo d671cklbujdc73cvbp30?"}
+3. Job status:
+   {"query": "What is the status of job d671cklbujdc73cvbp30?"}
 
-4. Listar trabajos recientes:
-   {"query": "Muéstrame mis trabajos recientes"}
+4. List recent jobs:
+   {"query": "Show me my recent jobs"}
 
-5. Trabajos en ejecución:
-   {"query": "¿Qué trabajos tengo corriendo actualmente?"}
+5. Running jobs:
+   {"query": "What jobs do I have running currently?"}
 
-6. Backend menos ocupado:
-   {"query": "¿Cuál es el backend menos ocupado?"}
+6. Least busy backend:
+   {"query": "Which is the least busy backend?"}
 
-SALIDA:
-- Tablas formateadas con información de backends
-- Estado y resultados de trabajos
-- Recomendaciones basadas en disponibilidad
-- Información técnica detallada de backends
+OUTPUT:
+- Formatted tables with backend information
+- Job status and results
+- Recommendations based on availability
+- Detailed technical backend information
 """
     
     @property
@@ -111,13 +111,13 @@ SALIDA:
         context: Optional[RunContext] = None
     ) -> StringToolOutput:
         """
-        Invoca al Quantum Status Agent vía A2A usando BeeAI Framework.
+        Invokes the Quantum Status Agent via A2A using BeeAI Framework.
         
-        Envía la consulta al Status Agent y retorna la respuesta
-        con información de estado, backends o trabajos.
+        Sends the query to the Status Agent and returns the response
+        with status information, backends, or jobs.
         """
         try:
-            # Configuración del Status Agent
+            # Status Agent configuration
             status_host = os.getenv("STATUS_HOST", "127.0.0.1")
             status_port = int(os.getenv("STATUS_PORT", 8002))
             status_url = f"http://{status_host}:{status_port}"
@@ -125,42 +125,42 @@ SALIDA:
             print(f"🔄 [Status Client] Sending query to Status Agent at {status_url}")
             print(f"📝 [Status Client] Query: {input.query[:100]}...")
             
-            # Crear cliente A2A usando BeeAI Framework
+            # Create A2A client using BeeAI Framework
             a2a_agent = A2AAgent(
                 url=status_url,
                 memory=UnconstrainedMemory()
             )
             
-            # Ejecutar la consulta al Status Agent
+            # Execute query to Status Agent
             response = await a2a_agent.run(input.query)
             
-            # Extraer el texto de la respuesta
+            # Extract text from response
             status_response = response.last_message.text if hasattr(response, 'last_message') else str(response)
             
             if not status_response:
                 return StringToolOutput(
-                    result="⚠️ El Status Agent no retornó una respuesta válida."
+                    result="⚠️ The Status Agent did not return a valid response."
                 )
             
             print(f"✅ [Status Client] Received response ({len(status_response)} chars)")
             
-            # Construir la respuesta formateada
-            result_text = "📊 **Respuesta del Quantum Status Agent:**\n\n"
+            # Build formatted response
+            result_text = "📊 **Response from Quantum Status Agent:**\n\n"
             result_text += status_response
             result_text += "\n\n---\n"
-            result_text += "💡 **Nota:** Esta información fue obtenida del Status Agent especializado.\n"
+            result_text += "💡 **Note:** This information was obtained from the specialized Status Agent.\n"
             
             return StringToolOutput(result=result_text)
             
         except ConnectionError as e:
             status_host = os.getenv("STATUS_HOST", "127.0.0.1")
             status_port = os.getenv("STATUS_PORT", "8002")
-            error_text = f"❌ No se pudo conectar al Quantum Status Agent.\n\n"
-            error_text += f"**Verifica que:**\n"
-            error_text += f"1. El Status Agent esté ejecutándose\n"
-            error_text += f"2. Esté escuchando en {status_host}:{status_port}\n"
-            error_text += f"3. No haya firewall bloqueando la conexión\n\n"
-            error_text += f"**Para iniciar el Status Agent:**\n"
+            error_text = f"❌ Could not connect to Quantum Status Agent.\n\n"
+            error_text += f"**Verify that:**\n"
+            error_text += f"1. The Status Agent is running\n"
+            error_text += f"2. It is listening on {status_host}:{status_port}\n"
+            error_text += f"3. No firewall is blocking the connection\n\n"
+            error_text += f"**To start the Status Agent:**\n"
             error_text += f"```bash\n"
             error_text += f"python3 -m beeai_agents.quantum_status_agent\n"
             error_text += f"```\n\n"
@@ -168,13 +168,13 @@ SALIDA:
             return StringToolOutput(result=error_text)
             
         except TimeoutError:
-            error_text = "⏱️ Timeout al esperar respuesta del Status Agent.\n\n"
-            error_text += "El Status Agent está tardando demasiado en responder. "
-            error_text += "Esto puede ocurrir con consultas muy complejas o si el servicio de IBM Quantum está lento."
+            error_text = "⏱️ Timeout waiting for Status Agent response.\n\n"
+            error_text += "The Status Agent is taking too long to respond. "
+            error_text += "This can happen with very complex queries or if the IBM Quantum service is slow."
             return StringToolOutput(result=error_text)
             
         except Exception as e:
-            error_text = f"❌ Error al comunicarse con el Status Agent: {str(e)}\n\n"
-            error_text += f"Tipo de error: {type(e).__name__}\n"
-            error_text += f"Detalles técnicos: {str(e)}"
+            error_text = f"❌ Error communicating with Status Agent: {str(e)}\n\n"
+            error_text += f"Error type: {type(e).__name__}\n"
+            error_text += f"Technical details: {str(e)}"
             return StringToolOutput(result=error_text)

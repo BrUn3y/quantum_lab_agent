@@ -1,18 +1,20 @@
 # 🔬 Quantum Lab Agent System
 
-A multi-agent system for quantum computing operations using IBM Quantum, built with BeeAI Framework and Watsonx AI.
+A multi-agent system for quantum computing operations using IBM Quantum, built with BeeAI Framework and configurable Watsonx or Ollama models.
 
 ## 🏗️ Architecture
 
 The system consists of 4 specialized agents communicating via Agent-to-Agent (A2A) protocol:
 
+![Quantum Lab Agent architecture diagram](docs/images/architecture.png)
+
 ```mermaid
 graph TB
-    User[👤 User] -->|Requests| OpsAgent[🎯 Operations Agent<br/>Port 8000<br/>Mistral Small]
+    User[👤 User] -->|Requests| OpsAgent[🎯 Lab Agent<br/>Port 8000<br/>Granite 4 Small H]
     
-    OpsAgent -->|Generate Code| DevAgent[💻 Developer Agent<br/>Port 8001<br/>Mistral Large]
-    OpsAgent -->|Query Status| StatusAgent[📊 Status Agent<br/>Port 8002<br/>Mistral Small]
-    OpsAgent -->|Execute Circuit| CompAgent[⚡ Computing Agent<br/>Port 8003<br/>Mistral Small]
+    OpsAgent -->|Generate Code| DevAgent[💻 Developer Agent<br/>Port 8001<br/>Granite 4 Small H]
+    OpsAgent -->|Query Status| StatusAgent[📊 Status Agent<br/>Port 8002<br/>Granite 4 Small H]
+    OpsAgent -->|Execute Circuit| CompAgent[⚡ Computing Agent<br/>Port 8003<br/>Granite 4 Small H]
     
     DevAgent -->|QASM Code| OpsAgent
     StatusAgent -->|Backend Info<br/>Job Status| OpsAgent
@@ -34,17 +36,17 @@ graph TB
 
 | Agent | Port | Model | Role | Tools |
 |-------|------|-------|------|-------|
-| **Operations** | 8000 | Mistral Small | Main orchestrator, coordinates all agents | 3 A2A clients |
-| **Developer** | 8001 | Mistral Large | Code generation & explanations | None (pure LLM) |
-| **Status** | 8002 | Mistral Small | Query backends & job status | 3 IBM Quantum tools |
-| **Computing** | 8003 | Mistral Small | Execute quantum circuits | 1 IBM Quantum tool |
+| **Lab** | 8000 | Granite 4 Small H | Main orchestrator, coordinates all agents | 3 A2A clients |
+| **Developer** | 8001 | Granite 4 Small H | Code generation & explanations | None (pure LLM) |
+| **Status** | 8002 | Granite 4 Small H | Query backends & job status | 3 IBM Quantum tools |
+| **Computing** | 8003 | Granite 4 Small H | Execute quantum circuits | 1 IBM Quantum tool |
 
 ## 🔄 Communication Flow
 
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant O as Operations Agent
+    participant O as Lab Agent
     participant D as Developer Agent
     participant S as Status Agent
     participant C as Computing Agent
@@ -81,7 +83,7 @@ sequenceDiagram
 
 ```mermaid
 graph LR
-    subgraph "Operations Agent Tools"
+    subgraph "Lab Agent Tools"
         DC[Developer Client<br/>A2A Tool]
         SC[Status Client<br/>A2A Tool]
         CC[Computing Client<br/>A2A Tool]
@@ -120,6 +122,7 @@ graph LR
 - Python 3.11+
 - IBM Quantum account ([Get one here](https://quantum.cloud.ibm.com/))
 - IBM Watsonx account with API key
+- Ollama (optional, for local models such as `granite4:small-h`)
 - `uv` package manager (recommended) or `pip`
 
 ## 🚀 Quick Start
@@ -155,12 +158,22 @@ WATSONX_API_KEY=your_watsonx_api_key_here
 WATSONX_PROJECT_ID=your_project_id_here
 WATSONX_API_URL=https://us-south.ml.cloud.ibm.com.....
 
-# Models (default values shown)
-WATSONX_DEVELOPER_MODEL=mistral-large-2512
-WATSONX_OPERATIONS_MODEL=mistralai/mistral-small-3-1-24b-instruct-2503
-WATSONX_STATUS_MODEL=mistralai/mistral-small-3-1-24b-instruct-2503
-WATSONX_COMPUTING_MODEL=mistralai/mistral-small-3-1-24b-instruct-2503
+# Models use BeeAI provider:model identifiers
+OLLAMA_API_BASE=http://127.0.0.1:11434
+DEVELOPER_MODEL=ollama:granite4:small-h
+LAB_MODEL=ollama:granite4:small-h
+STATUS_MODEL=ollama:granite4:small-h
+COMPUTING_MODEL=ollama:granite4:small-h
 ```
+
+For local inference, start Ollama and download the model before launching the agents:
+
+```bash
+ollama pull granite4:small-h
+```
+
+The legacy `WATSONX_DEVELOPER_MODEL`, `WATSONX_LAB_MODEL`, `WATSONX_STATUS_MODEL`, and
+`WATSONX_COMPUTING_MODEL` variables remain supported when their provider-agnostic counterparts are not set.
 
 ### 3. Start All Agents
 
@@ -172,14 +185,14 @@ WATSONX_COMPUTING_MODEL=mistralai/mistral-small-3-1-24b-instruct-2503
 ./start_developer.sh   # Port 8001
 ./start_status.sh      # Port 8002  
 ./start_computing.sh   # Port 8003
-./start_operations.sh  # Port 8000 (start this last)
+./start_lab.sh          # Port 8000 (start this last)
 ```
 
 ### 4. Verify Agents are Running
 
 ```bash
 # Check all agents
-curl http://localhost:8000/.well-known/agent-card.json  # Operations
+curl http://localhost:8000/.well-known/agent-card.json  # Lab
 curl http://localhost:8001/.well-known/agent-card.json  # Developer
 curl http://localhost:8002/.well-known/agent-card.json  # Status
 curl http://localhost:8003/.well-known/agent-card.json  # Computing
@@ -187,22 +200,31 @@ curl http://localhost:8003/.well-known/agent-card.json  # Computing
 
 ## 💬 Usage Examples
 
+Each agent is an A2A server. The agent card's `preferredTransport` is `JSONRPC`, served at `/jsonrpc/`, using the standard A2A `message/send` method. Requests are JSON-RPC 2.0 envelopes carrying an A2A `Message` (verified against a running agent):
+
 ### Example 1: Generate and Execute a Circuit
 
 ```bash
-# Send request to Operations Agent (port 8000)
-curl -X POST http://localhost:8000 \
+# Send request to Lab Agent (port 8000)
+curl -X POST http://localhost:8000/jsonrpc/ \
   -H "Content-Type: application/json" \
   -d '{
-    "messages": [{
-      "role": "user",
-      "content": "Create a Bell state circuit and execute it on ibm_torino"
-    }]
+    "jsonrpc": "2.0",
+    "id": "1",
+    "method": "message/send",
+    "params": {
+      "message": {
+        "kind": "message",
+        "messageId": "11111111-1111-1111-1111-111111111111",
+        "role": "user",
+        "parts": [{"kind": "text", "text": "Create a Bell state circuit and execute it on ibm_torino"}]
+      }
+    }
   }'
 ```
 
 **What happens:**
-1. Operations Agent receives request
+1. Lab Agent receives request
 2. Calls Developer Agent to generate QASM code
 3. Extracts code from Developer's response
 4. Calls Computing Agent to execute on ibm_torino
@@ -211,18 +233,25 @@ curl -X POST http://localhost:8000 \
 ### Example 2: Query Available Backends
 
 ```bash
-curl -X POST http://localhost:8000 \
+curl -X POST http://localhost:8000/jsonrpc/ \
   -H "Content-Type: application/json" \
   -d '{
-    "messages": [{
-      "role": "user",
-      "content": "What quantum computers are available?"
-    }]
+    "jsonrpc": "2.0",
+    "id": "2",
+    "method": "message/send",
+    "params": {
+      "message": {
+        "kind": "message",
+        "messageId": "22222222-2222-2222-2222-222222222222",
+        "role": "user",
+        "parts": [{"kind": "text", "text": "What quantum computers are available?"}]
+      }
+    }
   }'
 ```
 
 **What happens:**
-1. Operations Agent receives request
+1. Lab Agent receives request
 2. Calls Status Agent to query backends
 3. Status Agent uses `ibm_quantum_status` tool
 4. Returns table with all available backends
@@ -230,18 +259,25 @@ curl -X POST http://localhost:8000 \
 ### Example 3: Check Job Status
 
 ```bash
-curl -X POST http://localhost:8000 \
+curl -X POST http://localhost:8000/jsonrpc/ \
   -H "Content-Type: application/json" \
   -d '{
-    "messages": [{
-      "role": "user",
-      "content": "What is the status of job abc123xyz?"
-    }]
+    "jsonrpc": "2.0",
+    "id": "3",
+    "method": "message/send",
+    "params": {
+      "message": {
+        "kind": "message",
+        "messageId": "33333333-3333-3333-3333-333333333333",
+        "role": "user",
+        "parts": [{"kind": "text", "text": "What is the status of job abc123xyz?"}]
+      }
+    }
   }'
 ```
 
 **What happens:**
-1. Operations Agent receives request
+1. Lab Agent receives request
 2. Calls Status Agent with job ID
 3. Status Agent uses `ibm_quantum_job` tool
 4. Returns job status and results (if completed)
@@ -250,28 +286,42 @@ curl -X POST http://localhost:8000 \
 
 ```bash
 # First, generate code
-curl -X POST http://localhost:8000 \
+curl -X POST http://localhost:8000/jsonrpc/ \
   -H "Content-Type: application/json" \
   -d '{
-    "messages": [{
-      "role": "user",
-      "content": "Create a superposition circuit"
-    }]
+    "jsonrpc": "2.0",
+    "id": "4",
+    "method": "message/send",
+    "params": {
+      "message": {
+        "kind": "message",
+        "messageId": "44444444-4444-4444-4444-444444444444",
+        "role": "user",
+        "parts": [{"kind": "text", "text": "Create a superposition circuit"}]
+      }
+    }
   }'
 
 # Then, execute it (code is in memory)
-curl -X POST http://localhost:8000 \
+curl -X POST http://localhost:8000/jsonrpc/ \
   -H "Content-Type: application/json" \
   -d '{
-    "messages": [{
-      "role": "user",
-      "content": "Execute that circuit on ibm_kyiv"
-    }]
+    "jsonrpc": "2.0",
+    "id": "5",
+    "method": "message/send",
+    "params": {
+      "message": {
+        "kind": "message",
+        "messageId": "55555555-5555-5555-5555-555555555555",
+        "role": "user",
+        "parts": [{"kind": "text", "text": "Execute that circuit on ibm_kyiv"}]
+      }
+    }
   }'
 ```
 
 **What happens:**
-1. Operations Agent searches for QASM code in conversation history
+1. Lab Agent searches for QASM code in conversation history
 2. Finds the code from previous message
 3. Calls Computing Agent with the code
 4. Returns Job ID
@@ -283,7 +333,7 @@ curl -X POST http://localhost:8000 \
 ```
 quantum_lab_agent/
 ├── src/beeai_agents/
-│   ├── quantum_operations_agent.py   # Main orchestrator
+│   ├── quantum_lab_agent.py          # Main orchestrator
 │   ├── quantum_developer_agent.py    # Code generation
 │   ├── quantum_status_agent.py       # Status queries
 │   ├── quantum_computing_agent.py    # Circuit execution
@@ -299,7 +349,7 @@ quantum_lab_agent/
 ├── start_developer.sh     # Start Developer Agent
 ├── start_status.sh        # Start Status Agent
 ├── start_computing.sh     # Start Computing Agent
-├── start_operations.sh    # Start Operations Agent
+├── start_lab.sh           # Start Lab Agent
 ├── .env.example          # Environment template
 └── README.md             # This file
 ```
@@ -320,7 +370,7 @@ python test_bell_circuit.py
 pkill -f "quantum.*agent"
 
 # Or stop individually
-pkill -f "quantum_operations_agent"
+pkill -f "quantum_lab_agent"
 pkill -f "quantum_developer_agent"
 pkill -f "quantum_status_agent"
 pkill -f "quantum_computing_agent"
@@ -331,8 +381,8 @@ pkill -f "quantum_computing_agent"
 ### View Agent Logs
 
 ```bash
-# Operations Agent
-tail -f /tmp/operations_agent.log
+# Lab Agent
+tail -f /tmp/lab_agent.log
 
 # Developer Agent  
 tail -f /tmp/developer_agent.log
@@ -391,9 +441,9 @@ uv sync --reinstall
 
 ### Memory Issues
 
-**Problem:** Operations Agent runs out of memory
+**Problem:** Lab Agent runs out of memory
 
-- The Operations Agent uses `TokenMemory(max_tokens=6000)`
+- The Lab Agent uses `TokenMemory(max_tokens=6000)`
 - Long conversations are automatically truncated
 - Restart the agent to clear memory
 
@@ -417,7 +467,7 @@ This project is licensed under the Apache 2.0 License.
 - Built with [BeeAI Framework](https://github.com/i-am-bee/beeai-framework)
 - Powered by [IBM Watsonx](https://www.ibm.com/products/watsonx-ai)
 - Quantum computing via [IBM Quantum](https://quantum.ibm.com/)
-- LLMs: Mistral Large & Mistral Small
+- LLM: Granite 4 Small H via Ollama
 
 ---
 

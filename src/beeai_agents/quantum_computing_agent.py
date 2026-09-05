@@ -1,18 +1,19 @@
 """
-Quantum Computing Agent - Especialista en Ejecución de Circuitos Cuánticos
+Quantum Computing Agent - Specialist in Quantum Circuit Execution
 
-Este agente es un especialista en:
-- Ejecutar código QASM/Qiskit en computadoras cuánticas de IBM
-- Gestionar la ejecución en simuladores y hardware real
-- Proporcionar información detallada de trabajos ejecutados
-- Transpilación automática de circuitos
+This agent is a specialist in:
+- Execute QASM/Qiskit code on IBM quantum computers
+- Manage execution on simulators and real hardware
+- Provide detailed information on executed jobs
+- Automatic circuit transpilation
 
-Modelo: mistralai/mistral-small-3-1-24b-instruct-2503 (Watsonx)
-Puerto: 8003
-Tipo: Servidor AgentStack con A2A (ReActAgent con IBMQuantumTool)
+Model: configurable via COMPUTING_MODEL (Ollama/Watsonx)
+Port: 8003
+Type: AgentStack Server with A2A (ReActAgent with IBMQuantumTool)
 """
 
 import os
+import re
 from typing import Annotated
 from collections.abc import AsyncGenerator
 
@@ -26,70 +27,71 @@ from agentstack_sdk.a2a.extensions import AgentDetail, AgentDetailTool
 from agentstack_sdk.a2a.extensions import TrajectoryExtensionServer, TrajectoryExtensionSpec
 
 from beeai_framework.agents.react import ReActAgent
-from beeai_framework.backend import ChatModel
 from beeai_framework.memory import UnconstrainedMemory
 
-# Importar la herramienta de ejecución
+from .model_config import create_chat_model, explain_error, model_name, run_agent_with_retries
+
+# Import the execution tool
 from .tools import IBMQuantumTool
 
-# Instrucciones para el Computing Agent (sin template personalizado para evitar errores de parsing)
-COMPUTING_INSTRUCTIONS = """Eres el Quantum Computing Agent. Ejecutas circuitos cuánticos en IBM Quantum.
+# Instructions for the Computing Agent (without custom template to avoid parsing errors)
+COMPUTING_INSTRUCTIONS = """You are the Quantum Computing Agent. You execute quantum circuits on IBM Quantum.
 
-⚠️ REGLA CRÍTICA: Tu respuesta SIEMPRE debe incluir el Job ID de forma prominente.
+⚠️ CRITICAL RULE: Your response MUST ALWAYS include the Job ID prominently.
 
-PASOS:
-1. Extraer código QASM del request del usuario
-2. Identificar backend (si se especifica, sino usar ibm_kyiv)
-3. Ejecutar con ibm_quantum_executor
-4. En tu respuesta final, SIEMPRE incluir:
-   - ⚠️ **Job ID: [el_job_id_real]** (en negrita y con emoji de advertencia)
-   - Backend usado
+STEPS:
+1. Extract QASM code from user request
+2. Identify backend (if specified, otherwise use ibm_kyiv)
+3. Execute with ibm_quantum_operator
+4. In your final response, ALWAYS include:
+   - ⚠️ **Job ID: [the_real_job_id]** (in bold and with warning emoji)
+   - Backend used
    - Shots
-   - Resultados (si están disponibles)
+   - Results (if available)
 
-FORMATO DE RESPUESTA:
+RESPONSE FORMAT:
 ```
-🚀 Circuito ejecutado exitosamente
+🚀 Circuit executed successfully
 
-⚠️ **Job ID: abc123xyz456** ← ESTO ES OBLIGATORIO
+⚠️ **Job ID: abc123xyz456** ← THIS IS MANDATORY
 
 Backend: ibm_torino
 Shots: 1024
-Estado: DONE
+Status: DONE
 
-[Resultados si están disponibles]
+[Results if available]
 ```
 
-El Job ID es CRÍTICO porque las computadoras cuánticas tardan en responder y el usuario necesita el ID para consultar resultados después.
+The Job ID is CRITICAL because quantum computers take time to respond and the user needs the ID to query results later.
 """
 
-# Detalles del agente para AgentStack
+# Agent details for AgentStack
 COMPUTING_AGENT_DETAIL = AgentDetail(
-    user_greeting="⚡ ¡Hola! Soy el Quantum Computing Agent. Ejecuto circuitos cuánticos en simuladores y hardware real de IBM Quantum, gestionando la transpilación y proporcionando Job IDs para seguimiento.",
+    user_greeting="⚡ Hello! I'm the Quantum Computing Agent. I execute quantum circuits on IBM Quantum simulators and real hardware, managing transpilation and providing Job IDs for tracking.",
     version="1.0.0",
-    framework="BeeAI + Watsonx + A2A",
+    framework="BeeAI + A2A (Watsonx/Ollama)",
     author={"name": "Edgar Bruney"},
     tools=[
         AgentDetailTool(
             name="IBM Quantum Executor",
-            description="Ejecuta código QASM/Qiskit en computadoras cuánticas de IBM (simuladores o hardware real) con transpilación automática."
+            description="Executes QASM/Qiskit code on IBM quantum computers (simulators or real hardware) with automatic transpilation."
         )
     ],
 )
 
-# Skills expuestos por el agente
+# Skills exposed by the agent
 COMPUTING_AGENT_SKILLS = [
     AgentSkill(
         id="quantum-circuit-execution",
         name="Quantum Circuit Execution",
-        description="Ejecuta circuitos cuánticos en simuladores o hardware real de IBM Quantum con gestión automática de transpilación.",
+        description="Executes quantum circuits on IBM Quantum simulators or real hardware with automatic transpilation management.",
         tags=["Quantum Computing", "IBM Quantum", "Circuit Execution", "QASM", "Qiskit"],
         examples=[
-            "Ejecuta este código QASM en ibm_torino",
+            "Execute this QASM code on ibm_torino",
             "Execute this circuit on ibm_brisbane",
-            "Ejecuta el circuito en el simulador ibm_kyiv",
+            "Execute the circuit on the ibm_kyiv simulator",
             "Run this QASM code on real quantum hardware",
-            "Ejecuta este circuito con 2048 shots en ibm_osaka"
+            "Execute this circuit with 2048 shots on ibm_osaka"
         ]
     )
 ]
@@ -97,14 +99,49 @@ COMPUTING_AGENT_SKILLS = [
 # Crear servidor AgentStack
 server = Server()
 
+
+_QASM_FENCE_PATTERN = re.compile(r"```(?:open)?qasm\s*(OPENQASM\s+[\s\S]*?)```", re.IGNORECASE)
+_QASM_PATTERN = re.compile(r"OPENQASM\s+(?:2\.0|3\.0)\s*;[\s\S]*", re.IGNORECASE)
+_BACKEND_PATTERN = re.compile(r"\b(?:ibm|ibmq)_[a-z0-9_]+\b", re.IGNORECASE)
+_SHOTS_PATTERN = re.compile(r"\b(\d+)\s*(?:shots?|disparos?)\b", re.IGNORECASE)
+_REAL_HARDWARE_PATTERN = re.compile(
+    r"\b(real hardware|hardware real|real backend|backend real|qpu|quantum hardware|"
+    r"hardware cu[aá]ntico|computadora cu[aá]ntica|quantum computer)\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_qasm(request: str) -> str | None:
+    """Extract the QASM payload supplied by the orchestrator or user."""
+    fenced_match = _QASM_FENCE_PATTERN.search(request)
+    if fenced_match:
+        return fenced_match.group(1).strip()
+
+    qasm_match = _QASM_PATTERN.search(request)
+    if not qasm_match:
+        return None
+
+    qasm = re.split(r"\n\s*---\s*\n", qasm_match.group(0), maxsplit=1)[0]
+    return qasm.strip()
+
+
+def _execution_parameters(request: str) -> dict[str, object]:
+    """Parse execution parameters without requiring an LLM tool call."""
+    backend_match = _BACKEND_PATTERN.search(request)
+    shots_match = _SHOTS_PATTERN.search(request)
+    return {
+        "backend_name": backend_match.group(0) if backend_match else "",
+        "use_real_device": bool(_REAL_HARDWARE_PATTERN.search(request)),
+        "shots": int(shots_match.group(1)) if shots_match else 1024,
+        "wait_for_results": False,
+        "max_wait_time": 300,
+    }
+
 def create_computing_agent():
-    """Crea una instancia del Quantum Computing Agent con Mistral Small usando ReActAgent"""
-    # Configurar Watsonx con Mistral Small
-    llm = ChatModel.from_name(
-        f"watsonx:{os.getenv('WATSONX_COMPUTING_MODEL', 'mistralai/mistral-small-3-1-24b-instruct-2503')}"
-    )
+    """Create the Quantum Computing Agent with its configured chat model."""
+    llm = create_chat_model("COMPUTING")
     
-    # Crear el agente usando ReActAgent
+    # Create the agent using ReActAgent
     return ReActAgent(
         llm=llm,
         tools=[IBMQuantumTool()],
@@ -122,47 +159,79 @@ async def quantum_computing_agent(
     trajectory: Annotated[TrajectoryExtensionServer, TrajectoryExtensionSpec()]
 ):
     """
-    Handler principal del Quantum Computing Agent.
+    Main handler for the Quantum Computing Agent.
     
-    Este agente ejecuta circuitos cuánticos en IBM Quantum.
+    This agent executes quantum circuits on IBM Quantum.
     """
     user_query = get_message_text(input)
     print("=" * 80)
     print(f"⚡ [Computing Agent] Received query: '{user_query[:100]}...'")
     print("=" * 80)
     
-    # Paso 1: Análisis de la solicitud
+    # Step 1: Request analysis
     yield trajectory.trajectory_metadata(
-        title="🔍 Analizando solicitud de ejecución",
-        content=f"Procesando la consulta del usuario:\n```\n{user_query[:200]}{'...' if len(user_query) > 200 else ''}\n```"
+        title="🔍 Analyzing execution request",
+        content=f"Processing user query:\n```\n{user_query[:200]}{'...' if len(user_query) > 200 else ''}\n```"
     )
+
+    qasm_code = _extract_qasm(user_query)
+    if qasm_code:
+        parameters = _execution_parameters(user_query)
+        yield trajectory.trajectory_metadata(
+            title="⚙️ Executing validated QASM",
+            content=(
+                "Using deterministic execution parameters:\n"
+                f"- Backend: {parameters['backend_name'] or 'least busy/default'}\n"
+                f"- Real hardware: {parameters['use_real_device']}\n"
+                f"- Shots: {parameters['shots']}"
+            ),
+        )
+        try:
+            tool_output = await IBMQuantumTool().run({"qasm_code": qasm_code, **parameters})
+            response = tool_output.get_text_content()
+            succeeded = "**Job ID:**" in response
+            yield trajectory.trajectory_metadata(
+                title="✅ Job submitted" if succeeded else "❌ Execution failed",
+                content=(
+                    "IBM Quantum returned a Job ID." if succeeded
+                    else "IBM Quantum rejected the execution request; see the response for details."
+                ),
+            )
+            yield AgentMessage(text=response)
+        except Exception as e:
+            yield trajectory.trajectory_metadata(
+                title="❌ Execution failed",
+                content=f"**Type:** {type(e).__name__}\n**Message:** {explain_error(e)}",
+            )
+            yield AgentMessage(text=f"❌ Error in Computing Agent: {explain_error(e)}")
+        return
     
-    # Crear el agente con las instrucciones
+    # Create the agent with instructions
     agent = create_computing_agent()
     
-    # Paso 2: Preparación del agente
+    # Step 2: Agent preparation
     yield trajectory.trajectory_metadata(
-        title="🤖 Preparando agente de ejecución",
-        content=f"**Configuración:**\n- Modelo: Mistral Small 3.1\n- Herramienta: IBM Quantum Executor\n- Memoria: Ilimitada"
+        title="🤖 Preparing execution agent",
+        content=f"**Configuration:**\n- Model: {model_name('COMPUTING')}\n- Tool: IBM Quantum Executor\n- Memory: Unconstrained"
     )
     
-    # Construir el prompt con las instrucciones del sistema
+    # Build the prompt with system instructions
     full_prompt = f"{COMPUTING_INSTRUCTIONS}\n\n---\n\nUSER REQUEST:\n{user_query}"
     
-    # Paso 3: Ejecución del circuito
+    # Step 3: Circuit execution
     yield trajectory.trajectory_metadata(
-        title="⚙️ Ejecutando circuito cuántico",
-        content="El agente está ejecutando el circuito en IBM Quantum..."
+        title="⚙️ Executing quantum circuit",
+        content="The agent is executing the circuit on IBM Quantum..."
     )
     
-    # Ejecutar el agente
+    # Execute the agent
     try:
-        run_context = await agent.run(full_prompt)
+        run_context = await run_agent_with_retries(agent, full_prompt)
         
-        # Actualizar trayectoria con progreso
+        # Update trajectory with progress
         yield trajectory.trajectory_metadata(
-            title="✅ Circuito ejecutado",
-            content="- [x] Código QASM extraído\n- [x] Circuito transpilado\n- [x] Trabajo enviado a IBM Quantum"
+            title="✅ Circuit executed",
+            content="- [x] QASM code extracted\n- [x] Circuit transpiled\n- [x] Job submitted to IBM Quantum"
         )
         
         # Extraer la respuesta
@@ -186,17 +255,17 @@ async def quantum_computing_agent(
         if not isinstance(response, str):
             response = str(response)
         
-        # Paso 4: Respuesta generada
+        # Step 4: Response generated
         yield trajectory.trajectory_metadata(
-            title="✅ Job ID generado",
-            content=f"Trabajo enviado a IBM Quantum ({len(response)} caracteres)\n\n**Contenido:**\n- Job ID para seguimiento\n- Backend utilizado\n- Configuración de ejecución"
+            title="✅ Job ID generated",
+            content=f"Job submitted to IBM Quantum ({len(response)} characters)\n\n**Content:**\n- Job ID for tracking\n- Backend used\n- Execution configuration"
         )
         
         print("=" * 80)
         print(f"✅ [Computing Agent] Response generated ({len(response)} chars)")
         print("=" * 80)
         
-        # Crear el mensaje de respuesta
+        # Create the response message
         response_message = AgentMessage(text=response)
         
         # Yield la respuesta al usuario
@@ -204,16 +273,16 @@ async def quantum_computing_agent(
         
     except Exception as e:
         import traceback
-        error_msg = f"❌ Error en Computing Agent: {str(e)}"
-        error_details = f"\n\nTipo de error: {type(e).__name__}\n"
-        error_details += f"Detalles: {str(e)}\n\n"
+        error_msg = f"❌ Error in Computing Agent: {explain_error(e)}"
+        error_details = f"\n\nError type: {type(e).__name__}\n"
+        error_details += f"Details: {explain_error(e)}\n\n"
         error_details += "Traceback:\n"
         error_details += traceback.format_exc()
-        
-        # Trayectoria de error
+
+        # Error trajectory
         yield trajectory.trajectory_metadata(
-            title="❌ Error detectado",
-            content=f"**Tipo:** {type(e).__name__}\n**Mensaje:** {str(e)}\n\nConsulta los logs para más detalles."
+            title="❌ Error detected",
+            content=f"**Type:** {type(e).__name__}\n**Message:** {explain_error(e)}\n\nCheck logs for more details."
         )
         
         print("=" * 80)
@@ -221,10 +290,10 @@ async def quantum_computing_agent(
         print(error_details)
         print("=" * 80)
         
-        yield AgentMessage(text=error_msg + error_details)
+        yield AgentMessage(text=error_msg)
 
 def run():
-    """Inicia el servidor del Quantum Computing Agent con almacenamiento persistente"""
+    """Starts the Quantum Computing Agent server with persistent storage"""
     port = int(os.getenv("COMPUTING_PORT", 8003))
     host = os.getenv("COMPUTING_HOST", "127.0.0.1")
     
@@ -232,7 +301,7 @@ def run():
     print("🚀 Starting Quantum Computing Agent Server (AgentStack)")
     print("=" * 80)
     print(f"  ⚡ Agent: Quantum Computing Agent")
-    print(f"  🤖 Model: {os.getenv('WATSONX_COMPUTING_MODEL', 'mistralai/mistral-small-3-1-24b-instruct-2503')}")
+    print(f"  🤖 Model: {model_name('COMPUTING')}")
     print(f"  🌐 Host: {host}")
     print(f"  🔌 Port: {port}")
     print(f"  🛠️  Tools: 1 (IBM Quantum Executor)")
@@ -240,11 +309,11 @@ def run():
     print(f"  🎯 Trajectory: Visualization enabled")
     print(f"  📚 Skills: Circuit Execution")
     print("=" * 80)
-    print("\n💡 Tip: Este agente es invocado por el Operations Agent (puerto 8000)")
-    print("   para ejecutar circuitos cuánticos en IBM Quantum.")
+    print("\n💡 Tip: This agent is invoked by the Lab Agent (port 8000)")
+    print("   to execute quantum circuits on IBM Quantum.")
     print("=" * 80)
     
-    # Ejecutar servidor sin PlatformContextStore (invocado vía A2A)
+    # Run server without PlatformContextStore (invoked via A2A)
     server.run(
         host=host,
         port=port

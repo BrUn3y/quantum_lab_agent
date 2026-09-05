@@ -1,9 +1,9 @@
 """
-Quantum Developer Client Tool - Cliente A2A para invocar al Quantum Developer Agent
+Quantum Developer Client Tool - A2A Client to invoke the Quantum Developer Agent
 
-Esta herramienta permite al Quantum Operations Agent comunicarse con el
-Quantum Developer Agent para solicitar generación de código, explicaciones
-y optimizaciones de circuitos cuánticos usando el A2AAgent de BeeAI Framework.
+This tool allows the Quantum Lab Agent to communicate with the
+Quantum Developer Agent to request code generation, explanations,
+and quantum circuit optimizations using the BeeAI Framework A2AAgent.
 """
 
 from beeai_framework.tools import Tool
@@ -20,24 +20,24 @@ class DeveloperClientInput(BaseModel):
     """Input schema for Quantum Developer Client"""
     request: str = Field(
         description="""
-        Solicitud para el Quantum Developer Agent. Puede ser:
-        - "Crea un circuito de [descripción]" para generar código
-        - "Explica [concepto cuántico]" para obtener explicaciones
-        - "Optimiza este código: [código]" para optimización
-        - "Dame un ejemplo de [algoritmo]" para ejemplos
+        Request for the Quantum Developer Agent. It can be:
+        - "Create a circuit for [description]" to generate code
+        - "Explain [quantum concept]" to get explanations
+        - "Optimize this code: [code]" for optimization
+        - "Give me an example of [algorithm]" for examples
         """
     )
     format: str = Field(
         default="qasm",
-        description="Formato de código deseado: 'qasm' para OpenQASM 2.0, 'qiskit' para código Python Qiskit"
+        description="Desired code format: 'qasm' for OpenQASM 2.0, 'qiskit' for Qiskit Python code"
     )
 
 class QuantumDeveloperClient(Tool[DeveloperClientInput]):
     """
-    Cliente A2A para comunicarse con el Quantum Developer Agent.
+    A2A Client to communicate with the Quantum Developer Agent.
     
-    Este tool permite al Quantum Operations Agent invocar al Developer Agent
-    para obtener código cuántico, explicaciones y optimizaciones.
+    This tool allows the Quantum Lab Agent to invoke the Developer Agent
+    to obtain quantum code, explanations, and optimizations.
     """
     
     @property
@@ -47,58 +47,58 @@ class QuantumDeveloperClient(Tool[DeveloperClientInput]):
     @property
     def description(self) -> str:
         return """
-Invoca al Quantum Developer Agent para generar código cuántico o explicaciones.
+Invokes the Quantum Developer Agent to generate quantum code or explanations.
 
-CAPACIDADES:
-- Genera código OpenQASM 2.0 o Qiskit según lo solicitado
-- Explica conceptos de computación cuántica con ejemplos
-- Optimiza circuitos cuánticos existentes
-- Proporciona ejemplos de algoritmos cuánticos conocidos
-- Documenta código con comentarios claros
+CAPABILITIES:
+- Generates OpenQASM 2.0 or Qiskit code as requested
+- Explains quantum computing concepts with examples
+- Optimizes existing quantum circuits
+- Provides examples of well-known quantum algorithms
+- Documents code with clear comments
 
-CUÁNDO USAR ESTA HERRAMIENTA:
-✅ Cuando el usuario pide "crea un circuito"
-✅ Cuando necesitas código QASM para ejecutar
-✅ Cuando piden "explica" un concepto cuántico
-✅ Cuando solicitan "ejemplo de" un algoritmo
-✅ Cuando necesitas optimizar código existente
+WHEN TO USE THIS TOOL:
+✅ When the user asks to "create a circuit"
+✅ When you need QASM code to execute
+✅ When they ask to "explain" a quantum concept
+✅ When they request an "example of" an algorithm
+✅ When you need to optimize existing code
 
-❌ NO usar para:
-- Ejecutar circuitos (usa ibm_quantum_executor)
-- Consultar estado de backends (usa ibm_quantum_status)
-- Ver resultados de trabajos (usa ibm_quantum_job)
+❌ DO NOT use for:
+- Executing circuits (use ibm_quantum_operator)
+- Querying backend status (use ibm_quantum_status)
+- Viewing job results (use ibm_quantum_job)
 
-EJEMPLOS DE USO:
+USAGE EXAMPLES:
 
-1. Generar código de superposición:
+1. Generate superposition code:
    {
-     "request": "Crea un circuito de superposición con 3 qubits",
+     "request": "Create a superposition circuit with 3 qubits",
      "format": "qasm"
    }
 
-2. Explicar entrelazamiento:
+2. Explain entanglement:
    {
-     "request": "Explica qué es el entrelazamiento cuántico con un ejemplo",
+     "request": "Explain what quantum entanglement is with an example",
      "format": "qasm"
    }
 
-3. Ejemplo de algoritmo:
+3. Algorithm example:
    {
-     "request": "Dame un ejemplo del algoritmo de Grover",
+     "request": "Give me an example of Grover's algorithm",
      "format": "qiskit"
    }
 
-4. Optimizar circuito:
+4. Optimize circuit:
    {
-     "request": "Optimiza este circuito QASM: OPENQASM 2.0; include 'qelib1.inc'; qreg q[2]; creg c[2]; h q[0]; h q[1]; cx q[0],q[1]; h q[0]; h q[1]; measure q->c;",
+     "request": "Optimize this QASM circuit: OPENQASM 2.0; include 'qelib1.inc'; qreg q[2]; creg c[2]; h q[0]; h q[1]; cx q[0],q[1]; h q[0]; h q[1]; measure q->c;",
      "format": "qasm"
    }
 
-SALIDA:
-- Código QASM o Qiskit completo y ejecutable
-- Explicaciones claras de conceptos
-- Comentarios y documentación
-- Sugerencias de optimización
+OUTPUT:
+- Complete and executable QASM or Qiskit code
+- Clear explanations of concepts
+- Comments and documentation
+- Optimization suggestions
 """
     
     @property
@@ -116,67 +116,67 @@ SALIDA:
         context: Optional[RunContext] = None
     ) -> StringToolOutput:
         """
-        Invoca al Quantum Developer Agent vía A2A usando BeeAI Framework.
+        Invokes the Quantum Developer Agent via A2A using the BeeAI Framework.
         
-        Envía la solicitud al Developer Agent y retorna la respuesta
-        con código generado o explicaciones.
+        Sends the request to the Developer Agent and returns the response
+        with generated code or explanations.
         """
         try:
-            # Configuración del Developer Agent
+            # Developer Agent Configuration
             developer_host = os.getenv("DEVELOPER_HOST", "127.0.0.1")
             developer_port = int(os.getenv("DEVELOPER_PORT", 8001))
             developer_url = f"http://{developer_host}:{developer_port}"
             
-            # Construir el mensaje para el Developer Agent
-            # Incluir el formato deseado en la solicitud
+            # Build the message for the Developer Agent
+            # Include the desired format in the request
             full_request = input.request
             if input.format.lower() == "qiskit":
-                full_request += "\n\nPor favor, proporciona el código en formato Qiskit (Python)."
+                full_request += "\n\nPlease provide the code in Qiskit (Python) format."
             else:
-                full_request += "\n\nPor favor, proporciona el código en formato OpenQASM 2.0."
+                full_request += "\n\nPlease provide the code in OpenQASM 2.0 format."
             
             print(f"🔄 [Developer Client] Sending request to Developer Agent at {developer_url}")
             print(f"📝 [Developer Client] Request: {input.request[:100]}...")
             
-            # Crear cliente A2A usando BeeAI Framework
+            # Create A2A client using BeeAI Framework
             a2a_agent = A2AAgent(
                 url=developer_url,
                 memory=UnconstrainedMemory()
             )
             
-            # Ejecutar la solicitud al Developer Agent
+            # Execute the request to the Developer Agent
             response = await a2a_agent.run(full_request)
             
-            # Extraer el texto de la respuesta
+            # Extract the response text
             developer_response = response.last_message.text if hasattr(response, 'last_message') else str(response)
             
             if not developer_response:
                 return StringToolOutput(
-                    result="⚠️ El Developer Agent no retornó una respuesta válida."
+                    result="⚠️ The Developer Agent did not return a valid response."
                 )
             
             print(f"✅ [Developer Client] Received response ({len(developer_response)} chars)")
             
-            # Construir la respuesta formateada
-            result_text = "🎯 **Respuesta del Quantum Developer Agent:**\n\n"
+            # Build the formatted response
+            result_text = "🎯 **Response from the Quantum Developer Agent:**\n\n"
             result_text += developer_response
             result_text += "\n\n---\n"
-            result_text += "💡 **Nota:** Este código fue generado por el Developer Agent especializado.\n"
+            result_text += "💡 **Note:** This code was generated by the specialized Developer Agent.\n"
             
             if "OPENQASM" in developer_response or "qreg" in developer_response:
-                result_text += "✅ Código QASM detectado. Puedes ejecutarlo con `ibm_quantum_executor`.\n"
+                result_text += "✅ QASM code detected. You can execute it with `ibm_quantum_operator`.\n"
             
             return StringToolOutput(result=result_text)
             
         except ConnectionError as e:
             dev_host = os.getenv("DEVELOPER_HOST", "127.0.0.1")
             dev_port = os.getenv("DEVELOPER_PORT", "8001")
-            error_text = f"❌ No se pudo conectar al Quantum Developer Agent.\n\n"
-            error_text += f"**Verifica que:**\n"
-            error_text += f"1. El Developer Agent esté ejecutándose\n"
-            error_text += f"2. Esté escuchando en {dev_host}:{dev_port}\n"
-            error_text += f"3. No haya firewall bloqueando la conexión\n\n"
-            error_text += f"**Para iniciar el Developer Agent:**\n"
+            error_text = f"❌ Could not connect to the Quantum Developer Agent.\n\n"
+            error_text += f"**Check that:**\n"
+            error_text += f"1. The Developer Agent is running\n"
+            error_text += f"2. It is listening on {dev_host}:{dev_port}\n"
+            error_text += f"3. There is no firewall blocking the connection\n\n"
+            error_text += f"**To start the Developer Agent:**\n"
             error_text += f"```bash\n"
             error_text += f"python3 -m beeai_agents.quantum_developer_agent\n"
             error_text += f"```\n\n"
@@ -184,13 +184,13 @@ SALIDA:
             return StringToolOutput(result=error_text)
             
         except TimeoutError:
-            error_text = "⏱️ Timeout al esperar respuesta del Developer Agent.\n\n"
-            error_text += "El Developer Agent está tardando demasiado en responder. "
-            error_text += "Esto puede ocurrir con solicitudes muy complejas."
+            error_text = "⏱️ Timeout waiting for response from the Developer Agent.\n\n"
+            error_text += "The Developer Agent is taking too long to respond. "
+            error_text += "This can happen with very complex requests."
             return StringToolOutput(result=error_text)
             
         except Exception as e:
-            error_text = f"❌ Error al comunicarse con el Developer Agent: {str(e)}\n\n"
-            error_text += f"Tipo de error: {type(e).__name__}\n"
-            error_text += f"Detalles técnicos: {str(e)}"
+            error_text = f"❌ Error communicating with the Developer Agent: {str(e)}\n\n"
+            error_text += f"Error type: {type(e).__name__}\n"
+            error_text += f"Technical details: {str(e)}"
             return StringToolOutput(result=error_text)

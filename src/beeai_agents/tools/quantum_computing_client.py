@@ -1,9 +1,9 @@
 """
-Quantum Computing Client Tool - Cliente A2A para invocar al Quantum Computing Agent
+Quantum Computing Client Tool - A2A Client to invoke the Quantum Computing Agent
 
-Esta herramienta permite al Quantum Operations Agent comunicarse con el
-Quantum Computing Agent para ejecutar circuitos cuánticos en IBM Quantum
-usando el A2AAgent de BeeAI Framework.
+This tool allows the Quantum Lab Agent to communicate with the
+Quantum Computing Agent to execute quantum circuits on IBM Quantum
+using the BeeAI Framework A2AAgent.
 """
 
 from beeai_framework.tools import Tool
@@ -20,28 +20,28 @@ class ComputingClientInput(BaseModel):
     """Input schema for Quantum Computing Client"""
     request: str = Field(
         description="""
-        Solicitud de ejecución para el Quantum Computing Agent. Debe incluir:
+        Execution request for the Quantum Computing Agent. Must include:
         
-        1. El código QASM completo a ejecutar
-        2. El backend donde ejecutar (opcional, default: ibm_kyiv)
-        3. Si es hardware real o simulador (opcional)
-        4. Número de shots (opcional, default: 1024)
+        1. The complete QASM code to execute
+        2. The backend to execute on (optional, default: ibm_kyiv)
+        3. Whether it's real hardware or simulator (optional)
+        4. Number of shots (optional, default: 1024)
         
-        Ejemplos:
-        - "Ejecuta este código QASM en ibm_brisbane: OPENQASM 2.0; include 'qelib1.inc'; qreg q[2]; creg c[2]; h q[0]; cx q[0],q[1]; measure q->c;"
-        - "Ejecuta el circuito en el simulador ibm_kyiv con 2048 shots"
-        - "Ejecuta ese código en hardware real ibm_osaka"
+        Examples:
+        - "Execute this QASM code in ibm_brisbane: OPENQASM 2.0; include 'qelib1.inc'; qreg q[2]; creg c[2]; h q[0]; cx q[0],q[1]; measure q->c;"
+        - "Execute the circuit on the ibm_kyiv simulator with 2048 shots"
+        - "Execute that code on the ibm_osaka real hardware"
         
-        El Computing Agent extraerá el código QASM y los parámetros de la solicitud.
+        The Computing Agent will extract the QASM code and parameters from the request.
         """
     )
 
 class QuantumComputingClient(Tool[ComputingClientInput]):
     """
-    Cliente A2A para comunicarse con el Quantum Computing Agent.
+    A2A Client to communicate with the Quantum Computing Agent.
     
-    Este tool permite al Quantum Operations Agent invocar al Computing Agent
-    para ejecutar circuitos cuánticos en IBM Quantum.
+    This tool allows the Quantum Lab Agent to invoke the Computing Agent
+    to execute quantum circuits on IBM Quantum.
     """
     
     @property
@@ -51,80 +51,80 @@ class QuantumComputingClient(Tool[ComputingClientInput]):
     @property
     def description(self) -> str:
         return """
-Invoca al Quantum Computing Agent para ejecutar circuitos cuánticos en IBM Quantum.
+Invokes the Quantum Computing Agent to execute quantum circuits on IBM Quantum.
 
-CAPACIDADES DEL COMPUTING AGENT:
-- Ejecutar código QASM (OpenQASM 2.0/3.0) en computadoras cuánticas
-- Ejecutar en simuladores o hardware real
-- Transpilación automática de circuitos
-- Gestión de parámetros de ejecución (shots, backend, etc.)
-- Proporcionar Job ID y detalles de ejecución
+COMPUTING AGENT CAPABILITIES:
+- Execute QASM code (OpenQASM 2.0/3.0) on quantum computers
+- Execute on simulators or real hardware
+- Automatic circuit transpilation
+- Execution parameter management (shots, backend, etc.)
+- Provide Job ID and execution details
 
-CUÁNDO USAR ESTA HERRAMIENTA:
-✅ Usuario proporciona código QASM para ejecutar
-✅ Usuario dice "ejecuta este código"
-✅ Usuario dice "ejecuta el circuito en [backend]"
-✅ Código QASM está en el contexto de la conversación
-✅ Usuario especifica un backend para ejecutar
+WHEN TO USE THIS TOOL:
+✅ User provides QASM code to execute
+✅ User says "execute this code"
+✅ User says "execute the circuit on [backend]"
+✅ QASM code is in the conversation context
+✅ User specifies a backend for execution
 
-❌ NO usar para:
-- Generar código QASM (usa quantum_developer_client)
-- Consultar estado de backends (usa quantum_status_client)
-- Ver resultados de trabajos (usa quantum_status_client)
+❌ DO NOT use for:
+- Generating QASM code (use quantum_developer_client)
+- Querying backend status (use quantum_status_client)
+- Viewing job results (use quantum_status_client)
 
-FORMATO DE CÓDIGO QASM REQUERIDO:
-El código debe ser OpenQASM válido:
+REQUIRED QASM CODE FORMAT:
+The code must be valid OpenQASM:
 ```qasm
 OPENQASM 2.0;
 include "qelib1.inc";
 qreg q[N];
 creg c[N];
-// Puertas cuánticas
+// Quantum gates
 h q[0];
 cx q[0],q[1];
-// Mediciones (OBLIGATORIAS)
+// Measurements (MANDATORY)
 measure q -> c;
 ```
 
-EJEMPLOS DE USO:
+USAGE EXAMPLES:
 
-1. Ejecutar código en simulador (default):
+1. Execute code on simulator (default):
    {
-     "request": "Ejecuta este código QASM: OPENQASM 2.0; include 'qelib1.inc'; qreg q[2]; creg c[2]; h q[0]; cx q[0],q[1]; measure q->c;"
+     "request": "Execute this QASM code: OPENQASM 2.0; include 'qelib1.inc'; qreg q[2]; creg c[2]; h q[0]; cx q[0],q[1]; measure q->c;"
    }
 
-2. Ejecutar en hardware real específico:
+2. Execute on specific real hardware:
    {
-     "request": "Ejecuta este código en ibm_brisbane: OPENQASM 2.0; include 'qelib1.inc'; qreg q[2]; creg c[2]; h q[0]; cx q[0],q[1]; measure q->c;"
+     "request": "Execute this code on ibm_brisbane: OPENQASM 2.0; include 'qelib1.inc'; qreg q[2]; creg c[2]; h q[0]; cx q[0],q[1]; measure q->c;"
    }
 
-3. Ejecutar código del contexto:
+3. Execute code from context:
    {
-     "request": "Ejecuta ese código en el simulador ibm_kyiv"
+     "request": "Execute that code on the ibm_kyiv simulator"
    }
 
-4. Ejecutar con shots específicos:
+4. Execute with specific shots:
    {
-     "request": "Ejecuta el circuito en ibm_osaka con 2048 shots"
+     "request": "Execute the circuit on ibm_osaka with 2048 shots"
    }
 
-BACKENDS DISPONIBLES:
-- **Simuladores**: ibm_kyiv, ibm_sherbrooke, simulator_statevector
-- **Hardware Real**: ibm_brisbane, ibm_osaka, ibm_torino, ibm_kyoto
+AVAILABLE BACKENDS:
+- **Simulators**: ibm_kyiv, ibm_sherbrooke, simulator_statevector
+- **Real Hardware**: ibm_brisbane, ibm_osaka, ibm_torino, ibm_kyoto
 
-SALIDA:
-- Job ID completo del trabajo ejecutado
-- Backend usado (simulador o hardware real)
-- Número de shots
-- Estado de transpilación
-- Instrucciones para consultar resultados
+OUTPUT:
+- Full Job ID of the executed job
+- Backend used (simulator or real hardware)
+- Number of shots
+- Transpilation status
+- Instructions to consult results
 
-FLUJO TÍPICO:
-1. Operations Agent recibe solicitud de ejecución
-2. Invoca quantum_computing_client con código y parámetros
-3. Computing Agent ejecuta el circuito
-4. Retorna Job ID y detalles
-5. Usuario puede consultar resultados con quantum_status_client
+TYPICAL FLOW:
+1. Lab Agent receives execution request
+2. Invokes quantum_computing_client with code and parameters
+3. Computing Agent executes the circuit
+4. Returns Job ID and details
+5. User can consult results with quantum_status_client
 """
     
     @property
@@ -142,13 +142,13 @@ FLUJO TÍPICO:
         context: Optional[RunContext] = None
     ) -> StringToolOutput:
         """
-        Invoca al Quantum Computing Agent vía A2A usando BeeAI Framework.
+        Invokes the Quantum Computing Agent via A2A using the BeeAI Framework.
         
-        Envía la solicitud de ejecución al Computing Agent y retorna
-        el Job ID y detalles de la ejecución.
+        Sends the execution request to the Computing Agent and returns
+        the Job ID and execution details.
         """
         try:
-            # Configuración del Computing Agent
+            # Computing Agent Configuration
             computing_host = os.getenv("COMPUTING_HOST", "127.0.0.1")
             computing_port = int(os.getenv("COMPUTING_PORT", 8003))
             computing_url = f"http://{computing_host}:{computing_port}"
@@ -156,51 +156,51 @@ FLUJO TÍPICO:
             print(f"🔄 [Computing Client] Sending execution request to Computing Agent at {computing_url}")
             print(f"📝 [Computing Client] Request: {input.request[:100]}...")
             
-            # Crear cliente A2A usando BeeAI Framework
+            # Create A2A client using BeeAI Framework
             a2a_agent = A2AAgent(
                 url=computing_url,
                 memory=UnconstrainedMemory()
             )
             
-            # Agregar instrucciones críticas sobre Job ID al request
+            # Add critical instructions about Job ID to the request
             enhanced_request = f"""{input.request}
 
-⚠️ IMPORTANTE: Tu respuesta DEBE incluir el Job ID de forma prominente en este formato:
-⚠️ **Job ID: [el_job_id_real]**
+⚠️ IMPORTANT: Your response MUST include the Job ID prominently in this format:
+⚠️ **Job ID: [the_real_job_id]**
 
-El Job ID es crítico porque el usuario lo necesita para consultar resultados después."""
+The Job ID is critical because the user needs it to consult results later."""
             
-            # Ejecutar la solicitud al Computing Agent con instrucciones mejoradas
+            # Execute the request to the Computing Agent with enhanced instructions
             response = await a2a_agent.run(enhanced_request)
             
-            # Extraer el texto de la respuesta
+            # Extract the response text
             computing_response = response.last_message.text if hasattr(response, 'last_message') else str(response)
             
             if not computing_response:
                 return StringToolOutput(
-                    result="⚠️ El Computing Agent no retornó una respuesta válida."
+                    result="⚠️ The Computing Agent did not return a valid response."
                 )
             
             print(f"✅ [Computing Client] Received response ({len(computing_response)} chars)")
             
-            # Construir la respuesta formateada
-            result_text = "🚀 **Respuesta del Quantum Computing Agent:**\n\n"
+            # Build the formatted response
+            result_text = "🚀 **Response from the Quantum Computing Agent:**\n\n"
             result_text += computing_response
             result_text += "\n\n---\n"
-            result_text += "💡 **Nota:** El circuito fue ejecutado por el Computing Agent especializado.\n"
-            result_text += "Para consultar el estado y resultados, usa el Status Agent con el Job ID proporcionado.\n"
+            result_text += "💡 **Note:** The circuit was executed by the specialized Computing Agent.\n"
+            result_text += "To consult the status and results, use the Status Agent with the provided Job ID.\n"
             
             return StringToolOutput(result=result_text)
             
         except ConnectionError as e:
             computing_host = os.getenv("COMPUTING_HOST", "127.0.0.1")
             computing_port = os.getenv("COMPUTING_PORT", "8003")
-            error_text = f"❌ No se pudo conectar al Quantum Computing Agent.\n\n"
-            error_text += f"**Verifica que:**\n"
-            error_text += f"1. El Computing Agent esté ejecutándose\n"
-            error_text += f"2. Esté escuchando en {computing_host}:{computing_port}\n"
-            error_text += f"3. No haya firewall bloqueando la conexión\n\n"
-            error_text += f"**Para iniciar el Computing Agent:**\n"
+            error_text = f"❌ Could not connect to the Quantum Computing Agent.\n\n"
+            error_text += f"**Check that:**\n"
+            error_text += f"1. The Computing Agent is running\n"
+            error_text += f"2. It is listening on {computing_host}:{computing_port}\n"
+            error_text += f"3. There is no firewall blocking the connection\n\n"
+            error_text += f"**To start the Computing Agent:**\n"
             error_text += f"```bash\n"
             error_text += f"python3 -m beeai_agents.quantum_computing_agent\n"
             error_text += f"```\n\n"
@@ -208,13 +208,13 @@ El Job ID es crítico porque el usuario lo necesita para consultar resultados de
             return StringToolOutput(result=error_text)
             
         except TimeoutError:
-            error_text = "⏱️ Timeout al esperar respuesta del Computing Agent.\n\n"
-            error_text += "El Computing Agent está tardando demasiado en responder. "
-            error_text += "Esto puede ocurrir si el servicio de IBM Quantum está lento o si hay problemas de red."
+            error_text = "⏱️ Timeout waiting for response from the Computing Agent.\n\n"
+            error_text += "The Computing Agent is taking too long to respond. "
+            error_text += "This can happen if the IBM Quantum service is slow or if there are network issues."
             return StringToolOutput(result=error_text)
             
         except Exception as e:
-            error_text = f"❌ Error al comunicarse con el Computing Agent: {str(e)}\n\n"
-            error_text += f"Tipo de error: {type(e).__name__}\n"
-            error_text += f"Detalles técnicos: {str(e)}"
+            error_text = f"❌ Error communicating with the Computing Agent: {str(e)}\n\n"
+            error_text += f"Error type: {type(e).__name__}\n"
+            error_text += f"Technical details: {str(e)}"
             return StringToolOutput(result=error_text)

@@ -6,16 +6,120 @@ from pydantic import BaseModel, Field
 from qiskit_ibm_runtime import QiskitRuntimeService
 from typing import Optional
 import json
+import os
+import tempfile
+import uuid
+
+# Matplotlib with non-GUI backend
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Temporary directory for quantum PNGs (shared with Status Agent)
+QUANTUM_PNG_DIR = os.path.join(tempfile.gettempdir(), "quantum_lab_pngs")
+os.makedirs(QUANTUM_PNG_DIR, exist_ok=True)
+
+
+def _save_job_histogram_png(counts: dict, job_id: str) -> Optional[str]:
+    """
+    Generates a PNG histogram of quantum job results
+    and saves it to a temporary file.
+    Returns the PNG file path or None if it fails.
+    """
+    try:
+        if not counts:
+            return None
+
+        # Sort states by descending count (maximum 20 states)
+        sorted_items = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:20]
+        states = [item[0] for item in sorted_items]
+        values = [item[1] for item in sorted_items]
+        total = sum(counts.values())
+        percentages = [(v / total) * 100 for v in values]
+
+        # Create figure
+        fig, ax = plt.subplots(figsize=(max(8, len(states) * 0.9), 5))
+        fig.patch.set_facecolor('#0d1117')
+        ax.set_facecolor('#161b22')
+
+        # Gradient colors by probability (dark blue to light blue)
+        cmap = plt.get_cmap('Blues')
+        max_pct = max(percentages) if percentages else 1
+        bar_colors = [cmap(0.4 + 0.6 * (p / max_pct)) for p in percentages]
+
+        bars = ax.bar(
+            range(len(states)),
+            percentages,
+            color=bar_colors,
+            edgecolor='#30363d',
+            linewidth=0.8
+        )
+
+        # Value labels on bars
+        for bar, pct in zip(bars, percentages):
+            if pct > 1:
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + 0.3,
+                    f'{pct:.1f}%',
+                    ha='center', va='bottom',
+                    fontsize=8, color='white', fontweight='bold'
+                )
+
+        # Style
+        ax.set_xlabel('Quantum State', color='white', fontsize=11)
+        ax.set_ylabel('Percentage (%)', color='white', fontsize=11)
+        short_id = f"...{job_id[-16:]}" if len(job_id) > 16 else job_id
+        ax.set_title(f'📊 Job Results: {short_id}', color='white', fontsize=13, pad=12)
+        ax.set_xticks(range(len(states)))
+        ax.set_xticklabels(states, color='white', fontsize=9, fontfamily='monospace')
+        ax.tick_params(colors='white')
+        ax.spines['bottom'].set_color('#30363d')
+        ax.spines['left'].set_color('#30363d')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.yaxis.grid(True, alpha=0.2, color='#30363d')
+        ax.set_axisbelow(True)
+
+        # Total note
+        ax.text(
+            0.99, 0.97,
+            f'Total: {total:,} shots',
+            transform=ax.transAxes,
+            ha='right', va='top',
+            fontsize=9, color='#8b949e'
+        )
+
+        plt.tight_layout()
+
+        # Save to temporary file
+        png_name = f"job_{job_id[:8]}_{uuid.uuid4().hex[:8]}"
+        png_path = os.path.join(QUANTUM_PNG_DIR, f"{png_name}.png")
+        plt.savefig(png_path, format='png', dpi=120, bbox_inches='tight',
+                    facecolor=fig.get_facecolor())
+        plt.close(fig)
+        print(f"[JobTool] PNG saved: {png_path}")
+        return png_path
+
+    except Exception as e:
+        print(f"[JobTool] Error generating PNG: {e}")
+        try:
+            plt.close('all')
+        except Exception:
+            pass
+        return None
+
 
 class QuantumJobInput(BaseModel):
     """Input schema for quantum job status and results"""
     job_id: str = Field(
         default="",
-        description="ID del trabajo cuántico (ej: 'd671cklbujdc73cvbp30'). Si está vacío o es 'list', muestra todos los trabajos recientes del usuario."
+        description="Quantum job ID (e.g., 'd671cklbujdc73cvbp30'). If empty or 'list', shows all user's recent jobs."
     )
     filter_status: str = Field(
         default="all",
-        description="Filtrar trabajos por estado: 'all' (todos), 'running' (en ejecución), 'queued' (en cola), 'done' (completados), 'error' (con error)"
+        description="Filter jobs by status: 'all' (all), 'running' (running), 'queued' (queued), 'done' (completed), 'error' (with error)"
     )
 
 class IBMQuantumJobTool(Tool[QuantumJobInput]):
@@ -28,36 +132,36 @@ class IBMQuantumJobTool(Tool[QuantumJobInput]):
     @property
     def description(self) -> str:
         return """
-Consulta el estado y resultados de TUS trabajos cuánticos en IBM Quantum.
+Queries the status and results of YOUR quantum jobs on IBM Quantum.
 
-USAR ESTA HERRAMIENTA CUANDO:
-✅ Usuario pregunta "¿cuáles son mis trabajos?"
-✅ Usuario pregunta "muéstrame mis trabajos en ejecución"
-✅ Usuario pregunta "lista mis trabajos cuánticos"
-✅ Usuario pregunta "¿qué trabajos tengo en cola?"
-✅ Usuario pregunta "muéstrame mis trabajos completados"
-✅ Usuario proporciona un Job ID específico
+USE THIS TOOL WHEN:
+✅ User asks "what are my jobs?"
+✅ User asks "show me my running jobs"
+✅ User asks "list my quantum jobs"
+✅ User asks "what jobs do I have in queue?"
+✅ User asks "show me my completed jobs"
+✅ User provides a specific Job ID
 
-NO USAR PARA:
-❌ Consultar backends disponibles (usa ibm_quantum_status)
-❌ Ver estado de computadoras cuánticas (usa ibm_quantum_status)
-❌ Información de backends (usa ibm_quantum_info)
+DO NOT USE FOR:
+❌ Query available backends (use ibm_quantum_status)
+❌ View quantum computer status (use ibm_quantum_status)
+❌ Backend information (use ibm_quantum_info)
 
-PARÁMETROS:
-- job_id: Vacío o "list" para listar todos, o Job ID específico
+PARAMETERS:
+- job_id: Empty or "list" to list all, or specific Job ID
 - filter_status: "all", "running", "queued", "done", "error"
 
-EJEMPLOS:
-1. Listar todos los trabajos:
+EXAMPLES:
+1. List all jobs:
    {"job_id": "", "filter_status": "all"}
 
-2. Solo trabajos en ejecución:
+2. Only running jobs:
    {"job_id": "", "filter_status": "running"}
 
-3. Solo trabajos en cola:
+3. Only queued jobs:
    {"job_id": "", "filter_status": "queued"}
 
-4. Trabajo específico:
+4. Specific job:
    {"job_id": "d673qqdbujdc73cvep1g", "filter_status": "all"}
 """
     
@@ -77,37 +181,37 @@ EJEMPLOS:
     ) -> StringToolOutput:
         """Check quantum job status and retrieve results."""
         try:
-            # Inicializa el servicio - usa la instancia guardada
+            # Initialize service - uses saved instance
             service = QiskitRuntimeService(channel="ibm_quantum_platform")
             
             if not input.job_id or input.job_id.lower() == "list":
-                # Mostrar trabajos recientes con filtro
+                # Show recent jobs with filter
                 return await self._list_recent_jobs(service, input.filter_status)
             
-            # Obtener trabajo específico
+            # Get specific job
             try:
                 job = service.job(input.job_id)
             except Exception as e:
                 return StringToolOutput(
-                    result=f"❌ No se pudo encontrar el trabajo con ID '{input.job_id}'.\n\n"
+                    result=f"❌ Could not find job with ID '{input.job_id}'.\n\n"
                            f"Error: {str(e)}\n\n"
-                           f"Verifica que el Job ID sea correcto o usa job_id vacío para ver todos tus trabajos."
+                           f"Verify that the Job ID is correct or use empty job_id to see all your jobs."
                 )
             
-            # Construir reporte del trabajo
-            result_text = f"# 📊 Estado del Trabajo Cuántico\n\n"
+            # Build job report
+            result_text = f"# 📊 Quantum Job Status\n\n"
             result_text += f"**Job ID:** `{job.job_id()}`\n\n"
             
-            # Información básica
-            result_text += "## 📋 Información Básica\n\n"
-            result_text += "| Propiedad | Valor |\n"
-            result_text += "|-----------|-------|\n"
+            # Basic information
+            result_text += "## 📋 Basic Information\n\n"
+            result_text += "| Property | Value |\n"
+            result_text += "|----------|-------|\n"
             
             # Backend
             backend_name = job.backend().name if hasattr(job, 'backend') else "N/A"
             result_text += f"| **Backend** | {backend_name} |\n"
             
-            # Estado del trabajo
+            # Job status
             status = job.status()
             status_emoji = {
                 'QUEUED': '⏳',
@@ -119,62 +223,66 @@ EJEMPLOS:
             }
             status_name = str(status) if not hasattr(status, 'name') else status.name
             emoji = status_emoji.get(status_name, '❓')
-            result_text += f"| **Estado** | {emoji} {status_name} |\n"
+            result_text += f"| **Status** | {emoji} {status_name} |\n"
             
-            # Tiempo de creación
+            # Creation time
             if hasattr(job, 'creation_date'):
-                result_text += f"| **Creado** | {job.creation_date} |\n"
+                result_text += f"| **Created** | {job.creation_date} |\n"
             
-            # Tiempo en cola
+            # Queue time
             if hasattr(status, 'queue_position') and status.queue_position is not None:
-                result_text += f"| **Posición en cola** | {status.queue_position} |\n"
+                result_text += f"| **Queue position** | {status.queue_position} |\n"
             
             result_text += "\n"
             
-            # Resultados (si están disponibles)
+            # Results (if available)
             if status_name in ['COMPLETED', 'DONE']:
-                result_text += "## 🎯 Resultados\n\n"
+                result_text += "## 🎯 Results\n\n"
+                
+                # Variable to save counts and generate PNG later
+                final_counts = None
                 
                 try:
                     result = job.result()
                     results_found = False
                     
-                    # Método 1: SamplerV2 con BitArray - result._pub_results
+                    # Method 1: SamplerV2 with BitArray - result._pub_results
                     if hasattr(result, '_pub_results') and result._pub_results:
                         try:
                             pub_result = result._pub_results[0]
                             
-                            # Acceder a data.c que contiene el BitArray
+                            # Access data.c which contains the BitArray
                             if hasattr(pub_result, 'data') and hasattr(pub_result.data, 'c'):
                                 bit_array = pub_result.data.c
                                 
-                                # Obtener conteos del BitArray
+                                # Get counts from BitArray
                                 if hasattr(bit_array, 'get_counts'):
                                     counts = bit_array.get_counts()
                                     
-                                    result_text += "### 📊 Resultados de Mediciones\n\n"
-                                    result_text += "| Estado Cuántico | Conteo | Porcentaje |\n"
-                                    result_text += "|-----------------|--------|------------|\n"
+                                    result_text += "### 📊 Measurement Results\n\n"
+                                    result_text += "| Quantum State | Count | Percentage |\n"
+                                    result_text += "|---------------|-------|------------|\n"
                                     
                                     total = sum(counts.values())
                                     for state, count in sorted(counts.items(), key=lambda x: x[1], reverse=True)[:15]:
                                         percentage = (count / total) * 100
                                         result_text += f"| `{state}` | {count:,} | {percentage:.2f}% |\n"
                                     
-                                    result_text += f"\n**Total de mediciones:** {total:,}\n\n"
+                                    result_text += f"\n**Total measurements:** {total:,}\n\n"
                                     results_found = True
+                                    final_counts = counts
                         except Exception as e:
-                            result_text += f"⚠️ Error al procesar BitArray: {str(e)}\n\n"
+                            result_text += f"⚠️ Error processing BitArray: {str(e)}\n\n"
                     
-                    # Método 2: Formato antiguo - result.data
+                    # Method 2: Old format - result.data
                     if not results_found and hasattr(result, 'data') and result.data:
                         try:
                             pub_result = result.data[0]
                             
-                            # Buscar atributos de mediciones en PubResult
+                            # Search for measurement attributes in PubResult
                             measurements = None
                             
-                            # Intentar diferentes atributos comunes
+                            # Try different common attributes
                             for attr_name in ['meas', 'c', 'measurements', 'counts']:
                                 if hasattr(pub_result, attr_name):
                                     measurements = getattr(pub_result, attr_name)
@@ -182,11 +290,11 @@ EJEMPLOS:
                                         break
                             
                             if measurements is not None:
-                                result_text += "### 📊 Resultados de Mediciones\n\n"
-                                result_text += "| Estado Cuántico | Conteo | Porcentaje |\n"
-                                result_text += "|-----------------|--------|------------|\n"
+                                result_text += "### 📊 Measurement Results\n\n"
+                                result_text += "| Quantum State | Count | Percentage |\n"
+                                result_text += "|---------------|-------|------------|\n"
                                 
-                                # Procesar los datos de mediciones
+                                # Process measurement data
                                 if hasattr(measurements, 'get_counts'):
                                     counts = measurements.get_counts()
                                 elif isinstance(measurements, dict):
@@ -200,114 +308,124 @@ EJEMPLOS:
                                         percentage = (count / total) * 100
                                         result_text += f"| `{state}` | {count:,} | {percentage:.2f}% |\n"
                                     
-                                    result_text += f"\n**Total de mediciones:** {total:,}\n\n"
+                                    result_text += f"\n**Total measurements:** {total:,}\n\n"
                                     results_found = True
+                                    final_counts = counts
                         except Exception as e:
-                            result_text += f"⚠️ Error al procesar resultados: {str(e)}\n\n"
+                            result_text += f"⚠️ Error processing results: {str(e)}\n\n"
                     
-                    # Método 3: quasi_dists (formato muy antiguo)
+                    # Method 3: quasi_dists (very old format)
                     if not results_found and hasattr(result, 'quasi_dists') and result.quasi_dists:
-                        result_text += "### 📊 Distribución de Probabilidades\n\n"
-                        result_text += "| Estado Cuántico | Probabilidad | Conteo (aprox) |\n"
-                        result_text += "|-----------------|--------------|----------------|\n"
+                        result_text += "### 📊 Probability Distribution\n\n"
+                        result_text += "| Quantum State | Probability | Count (approx) |\n"
+                        result_text += "|---------------|-------------|----------------|\n"
                         
                         quasi_dist = result.quasi_dists[0]
                         total_shots = 4096
+                        quasi_counts = {}
                         
                         for state, prob in sorted(quasi_dist.items(), key=lambda x: x[1], reverse=True)[:15]:
                             binary_state = bin(state)[2:].zfill(2)
                             count = int(prob * total_shots)
                             percentage = prob * 100
                             result_text += f"| `{binary_state}` | {percentage:.2f}% | ~{count} |\n"
+                            quasi_counts[binary_state] = count
                         
                         if len(quasi_dist) > 15:
-                            result_text += f"\n*Mostrando 15 de {len(quasi_dist)} estados*\n"
+                            result_text += f"\n*Showing 15 of {len(quasi_dist)} states*\n"
                         
                         result_text += "\n"
                         results_found = True
+                        final_counts = quasi_counts
                     
-                    # Si aún no se encontraron resultados
+                    # If results still not found
                     if not results_found:
-                        result_text += "⚠️ **Resultados de mediciones no disponibles en el formato esperado.**\n\n"
-                        result_text += "El trabajo se completó exitosamente. Los resultados pueden requerir procesamiento adicional.\n\n"
+                        result_text += "⚠️ **Measurement results not available in expected format.**\n\n"
+                        result_text += "Job completed successfully. Results may require additional processing.\n\n"
                         
-                        # Mostrar información de depuración
-                        result_text += "**Información de depuración:**\n"
-                        result_text += f"- Tipo de resultado: `{type(result).__name__}`\n"
+                        # Show debug information
+                        result_text += "**Debug information:**\n"
+                        result_text += f"- Result type: `{type(result).__name__}`\n"
                         if hasattr(result, 'data'):
-                            result_text += f"- Tiene data: Sí ({len(result.data)} elementos)\n"
+                            result_text += f"- Has data: Yes ({len(result.data)} elements)\n"
                             if result.data:
-                                result_text += f"- Tipo de data[0]: `{type(result.data[0]).__name__}`\n"
+                                result_text += f"- Type of data[0]: `{type(result.data[0]).__name__}`\n"
                         result_text += "\n"
                     
-                    # Información de ejecución
+                    # Execution information
                     if hasattr(result, 'metadata') and result.metadata:
                         metadata = result.metadata[0] if isinstance(result.metadata, list) else result.metadata
                         
                         if isinstance(metadata, dict) and 'execution' in metadata:
                             exec_info = metadata['execution']
                             if hasattr(exec_info, 'execution_spans'):
-                                result_text += "### ⏱️ Información de Ejecución\n\n"
+                                result_text += "### ⏱️ Execution Information\n\n"
                                 spans = exec_info.execution_spans
                                 if spans:
                                     span = spans[0]
-                                    result_text += f"- **Inicio:** {span.start}\n"
-                                    result_text += f"- **Fin:** {span.stop}\n"
-                                    result_text += f"- **Shots ejecutados:** {span.size:,}\n\n"
+                                    result_text += f"- **Start:** {span.start}\n"
+                                    result_text += f"- **End:** {span.stop}\n"
+                                    result_text += f"- **Shots executed:** {span.size:,}\n\n"
                     
-                    result_text += "✅ **Trabajo completado exitosamente**\n\n"
+                    result_text += "✅ **Job completed successfully**\n\n"
                     
                     if not results_found:
-                        result_text += "💡 **Nota:** Para ver los resultados detallados, es posible que necesites usar la API de Qiskit directamente.\n\n"
+                        result_text += "💡 **Note:** To see detailed results, you may need to use the Qiskit API directly.\n\n"
+                    
+                    # Generate PNG histogram if there are results
+                    if final_counts:
+                        png_path = _save_job_histogram_png(final_counts, input.job_id)
+                        if png_path:
+                            result_text += f"\n__QUANTUM_PNG__{png_path}__END_PNG__\n"
                     
                 except Exception as e:
-                    result_text += f"⚠️ No se pudieron obtener los resultados detallados: {str(e)}\n\n"
+                    result_text += f"⚠️ Could not get detailed results: {str(e)}\n\n"
             
             elif status_name == 'QUEUED':
-                result_text += "⏳ **El trabajo está en cola esperando ejecución.**\n\n"
+                result_text += "⏳ **Job is queued waiting for execution.**\n\n"
                 if hasattr(status, 'queue_position'):
-                    result_text += f"Posición en cola: {status.queue_position}\n"
-                result_text += "Vuelve a consultar en unos minutos.\n\n"
+                    result_text += f"Queue position: {status.queue_position}\n"
+                result_text += "Check again in a few minutes.\n\n"
             
             elif status_name == 'RUNNING':
-                result_text += "🔄 **El trabajo se está ejecutando actualmente.**\n\n"
-                result_text += "Los resultados estarán disponibles pronto.\n\n"
+                result_text += "🔄 **Job is currently running.**\n\n"
+                result_text += "Results will be available soon.\n\n"
             
             elif status_name == 'CANCELLED':
-                result_text += "❌ **El trabajo fue cancelado.**\n\n"
+                result_text += "❌ **Job was cancelled.**\n\n"
             
             elif status_name == 'ERROR':
-                result_text += "🔴 **El trabajo terminó con error.**\n\n"
+                result_text += "🔴 **Job finished with error.**\n\n"
                 if hasattr(status, 'error_message'):
                     result_text += f"**Error:** {status.error_message}\n\n"
             
-            # Información adicional
+            # Additional information
             result_text += "---\n\n"
-            result_text += "💡 **Tip:** Guarda el Job ID para consultar los resultados más tarde.\n"
+            result_text += "💡 **Tip:** Save the Job ID to check results later.\n"
             
             return StringToolOutput(result=result_text)
             
         except Exception as e:
-            error_text = f"❌ Error al consultar el trabajo: {str(e)}\n\n"
-            error_text += "Verifica que:\n"
-            error_text += "- El Job ID sea correcto\n"
-            error_text += "- Tu token de IBM Quantum sea válido\n"
-            error_text += "- Tengas acceso al trabajo solicitado\n"
+            error_text = f"❌ Error querying job: {str(e)}\n\n"
+            error_text += "Verify that:\n"
+            error_text += "- The Job ID is correct\n"
+            error_text += "- Your IBM Quantum token is valid\n"
+            error_text += "- You have access to the requested job\n"
             return StringToolOutput(result=error_text)
     
     async def _list_recent_jobs(self, service: QiskitRuntimeService, filter_status: str = "all") -> StringToolOutput:
         """List recent jobs for the user with optional status filter."""
         try:
-            # Obtener los últimos 20 trabajos para tener suficientes después del filtro
+            # Get last 20 jobs to have enough after filtering
             jobs = service.jobs(limit=20)
             
             if not jobs:
                 return StringToolOutput(
-                    result="📭 No tienes trabajos recientes en IBM Quantum.\n\n"
-                           "Ejecuta un circuito cuántico para crear tu primer trabajo."
+                    result="📭 You have no recent jobs on IBM Quantum.\n\n"
+                           "Execute a quantum circuit to create your first job."
                 )
             
-            # Filtrar trabajos según el estado solicitado
+            # Filter jobs by requested status
             filtered_jobs = []
             status_map = {
                 'running': ['RUNNING'],
@@ -317,7 +435,8 @@ EJEMPLOS:
             }
             
             for job in jobs:
-                status = str(job.status())
+                raw_status = job.status()
+                status = str(raw_status) if not hasattr(raw_status, 'name') else raw_status.name
                 if filter_status == "all":
                     filtered_jobs.append(job)
                 elif filter_status.lower() in status_map:
@@ -325,30 +444,30 @@ EJEMPLOS:
                         filtered_jobs.append(job)
             
             if not filtered_jobs:
-                filter_msg = f" con estado '{filter_status}'" if filter_status != "all" else ""
+                filter_msg = f" with status '{filter_status}'" if filter_status != "all" else ""
                 return StringToolOutput(
-                    result=f"📭 No tienes trabajos{filter_msg} en IBM Quantum.\n\n"
-                           "Ejecuta un circuito cuántico para crear tu primer trabajo."
+                    result=f"📭 You have no jobs{filter_msg} on IBM Quantum.\n\n"
+                           "Execute a quantum circuit to create your first job."
                 )
             
-            # Título según el filtro
+            # Title based on filter
             if filter_status == "all":
-                title = "# 📋 Todos Tus Trabajos Cuánticos\n\n"
+                title = "# 📋 All Your Quantum Jobs\n\n"
             elif filter_status == "running":
-                title = "# 🔄 Tus Trabajos en Ejecución\n\n"
+                title = "# 🔄 Your Running Jobs\n\n"
             elif filter_status == "queued":
-                title = "# ⏳ Tus Trabajos en Cola\n\n"
+                title = "# ⏳ Your Queued Jobs\n\n"
             elif filter_status == "done":
-                title = "# ✅ Tus Trabajos Completados\n\n"
+                title = "# ✅ Your Completed Jobs\n\n"
             elif filter_status == "error":
-                title = "# 🔴 Tus Trabajos con Error\n\n"
+                title = "# 🔴 Your Jobs with Errors\n\n"
             else:
-                title = "# 📋 Tus Trabajos Cuánticos\n\n"
+                title = "# 📋 Your Quantum Jobs\n\n"
             
             result_text = title
-            result_text += f"**Total encontrados:** {len(filtered_jobs)}\n\n"
-            result_text += "| Job ID | Backend | Estado | Creado |\n"
-            result_text += "|--------|---------|--------|--------|\n"
+            result_text += f"**Total found:** {len(filtered_jobs)}\n\n"
+            result_text += "| Job ID | Backend | Status | Created |\n"
+            result_text += "|--------|---------|--------|----------|\n"
             
             status_emoji = {
                 'QUEUED': '⏳',
@@ -359,8 +478,8 @@ EJEMPLOS:
                 'ERROR': '🔴'
             }
             
-            for job in filtered_jobs[:10]:  # Mostrar máximo 10
-                job_id = job.job_id()[:20] + "..."  # Truncar para la tabla
+            for job in filtered_jobs[:10]:  # Show maximum 10
+                job_id = job.job_id()[:20] + "..."  # Truncate for table
                 backend = job.backend().name if hasattr(job, 'backend') else "N/A"
                 status = job.status()
                 status_name = str(status) if not hasattr(status, 'name') else status.name
@@ -370,20 +489,20 @@ EJEMPLOS:
                 result_text += f"| `{job_id}` | {backend} | {emoji} {status_name} | {created} |\n"
             
             if len(filtered_jobs) > 10:
-                result_text += f"\n*Mostrando 10 de {len(filtered_jobs)} trabajos*\n"
+                result_text += f"\n*Showing 10 of {len(filtered_jobs)} jobs*\n"
             
             result_text += "\n"
-            result_text += "💡 **Para ver detalles de un trabajo específico**, proporciona el Job ID completo.\n"
+            result_text += "💡 **To see details of a specific job**, provide the complete Job ID.\n"
             
-            # Agregar sugerencias según el filtro
+            # Add suggestions based on filter
             if filter_status == "running" or filter_status == "queued":
-                result_text += "⏱️ **Tip:** Estos trabajos aún están procesándose. Consulta más tarde para ver los resultados.\n"
+                result_text += "⏱️ **Tip:** These jobs are still processing. Check later to see results.\n"
             elif filter_status == "done":
-                result_text += "✅ **Tip:** Usa el Job ID para ver los resultados detallados de cada trabajo.\n"
+                result_text += "✅ **Tip:** Use the Job ID to see detailed results of each job.\n"
             
             return StringToolOutput(result=result_text)
             
         except Exception as e:
             return StringToolOutput(
-                result=f"❌ Error al listar trabajos: {str(e)}"
+                result=f"❌ Error listing jobs: {str(e)}"
             )

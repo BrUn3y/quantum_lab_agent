@@ -8,7 +8,7 @@ echo "📋 System Architecture:"
 echo "  🔹 Developer Agent (Port 8001) - Code Generation"
 echo "  🔹 Status Agent (Port 8002) - Status Queries"
 echo "  🔹 Computing Agent (Port 8003) - Circuit Execution"
-echo "  🔹 Operations Agent (Port 8000) - Orchestrator"
+echo "  🔹 Lab Agent (Port 8000) - Orchestrator"
 echo ""
 echo "=========================================="
 echo ""
@@ -32,7 +32,7 @@ echo ""
 
 # Start Developer Agent (port 8001)
 echo "🚀 Starting Developer Agent on port 8001..."
-python -m beeai_agents.quantum_developer_agent &
+uv run python -m beeai_agents.quantum_developer_agent &
 DEVELOPER_PID=$!
 echo "   ✅ Developer Agent started (PID: $DEVELOPER_PID)"
 echo ""
@@ -42,7 +42,7 @@ sleep 3
 
 # Start Status Agent (port 8002)
 echo "🚀 Starting Status Agent on port 8002..."
-python -m beeai_agents.quantum_status_agent &
+uv run python -m beeai_agents.quantum_status_agent &
 STATUS_PID=$!
 echo "   ✅ Status Agent started (PID: $STATUS_PID)"
 echo ""
@@ -52,7 +52,7 @@ sleep 3
 
 # Start Computing Agent (port 8003)
 echo "🚀 Starting Computing Agent on port 8003..."
-python -m beeai_agents.quantum_computing_agent &
+uv run python -m beeai_agents.quantum_computing_agent &
 COMPUTING_PID=$!
 echo "   ✅ Computing Agent started (PID: $COMPUTING_PID)"
 echo ""
@@ -60,11 +60,11 @@ echo ""
 # Wait for Computing to start
 sleep 3
 
-# Start Operations Agent (port 8000)
-echo "🚀 Starting Operations Agent on port 8000..."
-python -m beeai_agents.quantum_operations_agent &
-OPERATIONS_PID=$!
-echo "   ✅ Operations Agent started (PID: $OPERATIONS_PID)"
+# Start Lab Agent (port 8000)
+echo "🚀 Starting Lab Agent on port 8000..."
+uv run python -m beeai_agents.quantum_lab_agent &
+LAB_PID=$!
+echo "   ✅ Lab Agent started (PID: $LAB_PID)"
 echo ""
 
 echo "=========================================="
@@ -75,36 +75,36 @@ echo "📊 Agent Details:"
 echo "  🔹 Developer Agent:"
 echo "     - PID: $DEVELOPER_PID"
 echo "     - URL: http://127.0.0.1:8001"
-echo "     - Model: Mistral Large"
+echo "     - Model: granite4:small-h (Ollama)"
 echo "     - Role: Code Generation & Explanations"
 echo ""
 echo "  🔹 Status Agent:"
 echo "     - PID: $STATUS_PID"
 echo "     - URL: http://127.0.0.1:8002"
-echo "     - Model: Mistral Small"
+echo "     - Model: granite4:small-h (Ollama)"
 echo "     - Role: Backend & Job Status Queries"
 echo ""
 echo "  🔹 Computing Agent:"
 echo "     - PID: $COMPUTING_PID"
 echo "     - URL: http://127.0.0.1:8003"
-echo "     - Model: Mistral Small"
+echo "     - Model: granite4:small-h (Ollama)"
 echo "     - Role: Circuit Execution"
 echo ""
-echo "  🔹 Operations Agent:"
-echo "     - PID: $OPERATIONS_PID"
+echo "  🔹 Lab Agent:"
+echo "     - PID: $LAB_PID"
 echo "     - URL: http://127.0.0.1:8000"
-echo "     - Model: Mistral Small"
+echo "     - Model: granite4:small-h (Ollama)"
 echo "     - Role: Main Orchestrator"
 echo ""
 echo "=========================================="
 echo ""
 echo "💡 Tips:"
-echo "  - Use Operations Agent (port 8000) as main entry point"
+echo "  - Use Lab Agent (port 8000) as main entry point"
 echo "  - Developer, Status, and Computing agents are invoked automatically via A2A"
 echo "  - Press Ctrl+C to stop all agents"
 echo ""
 echo "🛑 To stop all agents, run:"
-echo "   kill $DEVELOPER_PID $STATUS_PID $COMPUTING_PID $OPERATIONS_PID"
+echo "   kill $DEVELOPER_PID $STATUS_PID $COMPUTING_PID $LAB_PID"
 echo ""
 echo "=========================================="
 
