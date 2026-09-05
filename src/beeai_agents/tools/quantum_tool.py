@@ -5,6 +5,7 @@ from beeai_framework.context import RunContext
 from pydantic import BaseModel, Field
 from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2
 from qiskit import QuantumCircuit, transpile
+from qiskit.primitives import StatevectorSampler
 from qiskit.qasm2 import dumps as qasm2_dumps
 from typing import Optional
 import asyncio
@@ -17,6 +18,10 @@ class QuantumInput(BaseModel):
     shots: int = Field(default=1024, ge=1, description="Number of circuit executions (default: 1024).")
     wait_for_results: bool = Field(default=False, description="If True, waits for the job to finish and shows results. If False, only returns the Job ID immediately.")
     max_wait_time: int = Field(default=300, description="Maximum wait time in seconds (default: 300 = 5 minutes).")
+    job_tags: list[str] = Field(
+        default_factory=lambda: ["quantum-circuit"],
+        description="Short descriptive tags attached to the IBM Quantum job.",
+    )
 
 class IBMQuantumTool(Tool[QuantumInput]):
     """Tool for executing quantum circuits on IBM Quantum infrastructure."""
@@ -74,22 +79,26 @@ qc.measure_all()
     ) -> StringToolOutput:
         """Execute quantum circuit on IBM Quantum infrastructure."""
         try:
-            # Initialize service - uses saved instance
-            service = QiskitRuntimeService(channel="ibm_quantum_platform")
-            
             # Backend selection
-            if input.backend_name:
+            local_names = {"simulator", "local_simulator", "statevector_simulator", "ibmq_qasm_simulator"}
+            use_local_simulator = not input.use_real_device and input.backend_name.lower() in local_names | {""}
+            service = None
+            backend = None
+            if use_local_simulator:
+                backend_name = "local_statevector_simulator"
+                backend_type = "🖥️ Local Simulator"
+            elif input.backend_name:
                 # Use specific backend
+                service = QiskitRuntimeService(channel="ibm_quantum_platform")
                 backend = service.backend(input.backend_name)
+                backend_name = backend.name
                 backend_type = "🖥️ Simulator" if "simulator" in input.backend_name.lower() else "⚛️ Real Hardware"
             elif input.use_real_device:
                 # Select least busy real hardware
+                service = QiskitRuntimeService(channel="ibm_quantum_platform")
                 backend = service.least_busy(simulator=False, operational=True)
+                backend_name = backend.name
                 backend_type = "⚛️ Real Hardware"
-            else:
-                # Use simulator by default
-                backend = service.backend("ibmq_qasm_simulator")
-                backend_type = "🖥️ Simulator"
 
             # Detect code format and convert if necessary
             code_format = "QASM"
@@ -153,7 +162,7 @@ qc.measure_all()
             
             # TRANSPILATION: Adapt circuit to specific hardware
             # This is CRITICAL for real hardware
-            result_text = f"🔄 **Transpiling circuit for {backend.name}...**\n\n"
+            result_text = f"🔄 **Transpiling circuit for {backend_name}...**\n\n"
             
             try:
                 # Transpile circuit for specific backend
@@ -175,19 +184,38 @@ qc.measure_all()
                            f"Try a simpler circuit or use a simulator."
                 )
             
-            # Execution using Sampler V2 with transpiled circuit
-            sampler = SamplerV2(mode=backend)
+            # Execute locally for simulator requests; use IBM Runtime for QPU jobs.
+            tags = list(dict.fromkeys(tag.strip() for tag in input.job_tags if tag.strip())) or ["quantum-circuit"]
+            if use_local_simulator:
+                sampler = StatevectorSampler()
+            else:
+                sampler = SamplerV2(mode=backend, options={"environment": {"job_tags": tags}})
             job = sampler.run([transpiled_qc], shots=input.shots)
             
             # Build initial response
             result_text += f"✅ **Circuit submitted successfully**\n\n"
-            result_text += f"**Backend:** {backend.name}\n"
+            result_text += f"**Backend:** {backend_name}\n"
             result_text += f"**Type:** {backend_type}\n"
             result_text += f"**Job ID:** `{job.job_id()}`\n"
+            result_text += f"**Tags:** {', '.join(f'`{tag}`' for tag in tags)}\n"
             result_text += f"**Shots:** {input.shots}\n"
             result_text += f"**Physical qubits used:** {transpiled_qc.num_qubits}\n"
             result_text += f"**Transpiled gates:** {len(transpiled_qc.data)}\n\n"
             
+            if use_local_simulator:
+                result = await asyncio.to_thread(job.result)
+                pub_result = result[0]
+                counts = pub_result.data.c.get_counts()
+                result_text += "✅ **Local simulation completed**\n\n"
+                result_text += "## 📊 Measurement Results\n\n"
+                result_text += "| Quantum State | Count | Percentage |\n"
+                result_text += "|---------------|-------|------------|\n"
+                total = sum(counts.values())
+                for state, count in sorted(counts.items(), key=lambda item: item[1], reverse=True)[:10]:
+                    result_text += f"| `{state}` | {count:,} | {(count / total) * 100:.2f}% |\n"
+                result_text += f"\n**Total measurements:** {total:,}\n"
+                return StringToolOutput(result=result_text)
+
             # If wait_for_results is True, wait for completion
             if input.wait_for_results:
                 result_text += "⏳ **Waiting for results...**\n\n"
@@ -273,7 +301,7 @@ qc.measure_all()
                 # Don't wait for results, just return Job ID
                 if input.use_real_device:
                     result_text += "🎯 **CONFIRMATION:** This circuit is running on REAL QUANTUM HARDWARE.\n"
-                    result_text += f"Results will be available when the job finishes executing on {backend.name}.\n\n"
+                    result_text += f"Results will be available when the job finishes executing on {backend_name}.\n\n"
                 else:
                     result_text += "🖥️ This circuit was executed on a simulator.\n\n"
                 
