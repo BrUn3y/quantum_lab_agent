@@ -14,7 +14,11 @@ Port: 8001
 Type: AgentStack Server with A2A (ReActAgent without tools)
 """
 
+import asyncio
+import json
 import os
+import re
+from urllib import request as urllib_request
 
 from typing import Annotated
 from collections.abc import AsyncGenerator
@@ -29,6 +33,7 @@ from agentstack_sdk.a2a.extensions import AgentDetail, AgentDetailTool
 from agentstack_sdk.a2a.extensions import TrajectoryExtensionServer, TrajectoryExtensionSpec
 
 from beeai_framework.agents.react import ReActAgent
+from beeai_framework.backend.message import UserMessage
 from beeai_framework.memory import UnconstrainedMemory
 
 from .model_config import create_chat_model, explain_error, model_name, run_agent_with_retries
@@ -378,6 +383,74 @@ DEVELOPER_AGENT_SKILLS = [
 # Crear servidor AgentStack
 server = Server()
 
+_SUPERPOSITION_PATTERN = re.compile(r"\b(superposition|superposici[oó]n)\b", re.IGNORECASE)
+_QUBIT_COUNT_PATTERN = re.compile(r"\b(\d+)\s*(?:qubits?|c[uú]bits?)\b", re.IGNORECASE)
+_CONCEPT_REQUEST_PATTERN = re.compile(
+    r"\b(explain\w*|describe\w*|what (?:is|are)|explica\w*|qu[eé] (?:es|son))\b",
+    re.IGNORECASE,
+)
+_ENTANGLEMENT_PATTERN = re.compile(r"\b(entanglement|entrelazamiento)\b", re.IGNORECASE)
+
+
+def _superposition_qasm(request: str) -> str | None:
+    """Build a simple measured superposition circuit without an LLM round trip."""
+    if not _SUPERPOSITION_PATTERN.search(request):
+        return None
+    match = _QUBIT_COUNT_PATTERN.search(request)
+    qubit_count = int(match.group(1)) if match else 1
+    if not 1 <= qubit_count <= 64:
+        return None
+    gates = "\n".join(f"h q[{index}];" for index in range(qubit_count))
+    return (
+        "```qasm\n"
+        "OPENQASM 2.0;\n"
+        'include "qelib1.inc";\n'
+        f"qreg q[{qubit_count}];\n"
+        f"creg c[{qubit_count}];\n\n"
+        f"{gates}\n"
+        "measure q -> c;\n"
+        "```"
+    )
+
+
+async def _run_concept_model(prompt: str) -> str:
+    """Generate a concise concept explanation without exposing model reasoning."""
+    configured_model = model_name("DEVELOPER")
+    if configured_model.startswith("ollama:"):
+        ollama_model = configured_model.split(":", 1)[1]
+        ollama_url = os.getenv("OLLAMA_API_BASE", "http://127.0.0.1:11434").rstrip("/")
+        payload = json.dumps(
+            {
+                "model": ollama_model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "think": False,
+                "options": {"num_predict": 220, "temperature": 0.1},
+            }
+        ).encode("utf-8")
+
+        def send_request() -> str:
+            req = urllib_request.Request(
+                f"{ollama_url}/api/chat",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib_request.urlopen(req, timeout=180) as response:
+                data = json.loads(response.read().decode("utf-8"))
+            return str(data.get("message", {}).get("content", "")).strip()
+
+        response = await asyncio.to_thread(send_request)
+        if not response:
+            raise ValueError("Ollama returned an empty concept explanation.")
+        return response
+
+    model_output = await create_chat_model("DEVELOPER").run(
+        [UserMessage(prompt)],
+        max_tokens=220,
+        temperature=0.1,
+    )
+    return model_output.get_text_content()
+
 def create_developer_agent():
     """Create the Quantum Developer Agent with its configured chat model."""
     llm = create_chat_model("DEVELOPER")
@@ -415,6 +488,15 @@ async def quantum_developer_agent(
         title="🔍 Analyzing code request",
         content=f"Processing user query:\n```\n{user_query[:200]}{'...' if len(user_query) > 200 else ''}\n```"
     )
+
+    superposition_qasm = _superposition_qasm(user_query)
+    if superposition_qasm:
+        yield trajectory.trajectory_metadata(
+            title="✅ Superposition circuit generated",
+            content="Generated and measured a valid OpenQASM 2.0 circuit deterministically.",
+        )
+        yield AgentMessage(text=superposition_qasm)
+        return
     
     # Create the agent with the instructions
     agent = create_developer_agent()
@@ -426,7 +508,25 @@ async def quantum_developer_agent(
     )
     
     # Build the prompt with system instructions
-    full_prompt = f"{DEVELOPER_INSTRUCTIONS}\n\n---\n\nUSER REQUEST:\n{user_query}"
+    if _ENTANGLEMENT_PATTERN.search(user_query):
+        full_prompt = (
+            "You are a quantum computing educator. Explain quantum entanglement accurately and concisely. "
+            "Use this exact canonical example: the Bell state |Phi+> = (|00> + |11>)/sqrt(2), "
+            "created by applying H to qubit 0 and then CNOT with control 0 and target 1. "
+            "Explain correlated measurements and explicitly state that entanglement cannot transmit "
+            "information faster than light. Do not rename the Bell state or introduce a cryptography "
+            "protocol unless the user asks for one. Answer in no more than 120 words.\n\n"
+            f"USER REQUEST:\n{user_query}"
+        )
+    elif _CONCEPT_REQUEST_PATTERN.search(user_query):
+        full_prompt = (
+            "You are a quantum computing educator. Answer the request accurately and concisely. "
+            "Define the concept, explain its mechanism, and give one useful quantum example. "
+            "Do not generate code unless the user asks for it. Answer in no more than 120 words.\n\n"
+            f"USER REQUEST:\n{user_query}"
+        )
+    else:
+        full_prompt = f"{DEVELOPER_INSTRUCTIONS}\n\n---\n\nUSER REQUEST:\n{user_query}"
     
     # Step 3: Code generation
     yield trajectory.trajectory_metadata(
@@ -434,9 +534,14 @@ async def quantum_developer_agent(
         content="Agent is analyzing the request and generating QASM/Qiskit code..."
     )
     
+    concept_request = bool(_CONCEPT_REQUEST_PATTERN.search(user_query))
+
     # Execute the agent
     try:
-        run_context = await run_agent_with_retries(agent, full_prompt)
+        if concept_request:
+            response = await _run_concept_model(full_prompt)
+        else:
+            run_context = await run_agent_with_retries(agent, full_prompt)
         
         # Update trajectory with progress
         yield trajectory.trajectory_metadata(
@@ -444,22 +549,23 @@ async def quantum_developer_agent(
             content="- [x] Analysis completed\n- [x] Code generated\n- [x] Explanation prepared"
         )
         
-        # Extraer la respuesta
-        response = ""
-        if hasattr(run_context, 'output') and run_context.output:
-            output = run_context.output
-            if isinstance(output, list) and output:
-                last_msg = output[-1]
-                if hasattr(last_msg, 'text'):
-                    response = str(last_msg.text)
-                elif hasattr(last_msg, 'content'):
-                    response = str(last_msg.content)
+        # Extract the ReAct response for code-generation requests.
+        if not concept_request:
+            response = ""
+            if hasattr(run_context, 'output') and run_context.output:
+                output = run_context.output
+                if isinstance(output, list) and output:
+                    last_msg = output[-1]
+                    if hasattr(last_msg, 'text'):
+                        response = str(last_msg.text)
+                    elif hasattr(last_msg, 'content'):
+                        response = str(last_msg.content)
+                    else:
+                        response = str(last_msg)
                 else:
-                    response = str(last_msg)
+                    response = str(output)
             else:
-                response = str(output)
-        else:
-            response = str(run_context)
+                response = str(run_context)
         
         # Asegurar que response sea string
         if not isinstance(response, str):

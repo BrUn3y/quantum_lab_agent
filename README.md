@@ -10,11 +10,11 @@ The system consists of 4 specialized agents communicating via Agent-to-Agent (A2
 
 ```mermaid
 graph TB
-    User[👤 User] -->|Requests| OpsAgent[🎯 Lab Agent<br/>Port 8000<br/>Granite 4 Small H]
+    User[👤 User] -->|Requests| OpsAgent[🎯 Lab Agent<br/>Port 8000<br/>Granite 4.2 8B]
     
-    OpsAgent -->|Generate Code| DevAgent[💻 Developer Agent<br/>Port 8001<br/>Granite 4 Small H]
-    OpsAgent -->|Query Status| StatusAgent[📊 Status Agent<br/>Port 8002<br/>Granite 4 Small H]
-    OpsAgent -->|Execute Circuit| CompAgent[⚡ Computing Agent<br/>Port 8003<br/>Granite 4 Small H]
+    OpsAgent -->|Generate Code| DevAgent[💻 Developer Agent<br/>Port 8001<br/>Granite 4.2 8B]
+    OpsAgent -->|Query Status| StatusAgent[📊 Status Agent<br/>Port 8002<br/>Granite 4.2 8B]
+    OpsAgent -->|Execute Circuit| CompAgent[⚡ Computing Agent<br/>Port 8003<br/>Granite 4.2 8B]
     
     DevAgent -->|QASM Code| OpsAgent
     StatusAgent -->|Backend Info<br/>Job Status| OpsAgent
@@ -36,10 +36,10 @@ graph TB
 
 | Agent | Port | Model | Role | Tools |
 |-------|------|-------|------|-------|
-| **Lab** | 8000 | Granite 4 Small H | Main orchestrator, coordinates all agents | 3 A2A clients |
-| **Developer** | 8001 | Granite 4 Small H | Code generation & explanations | None (pure LLM) |
-| **Status** | 8002 | Granite 4 Small H | Query backends & job status | 3 IBM Quantum tools |
-| **Computing** | 8003 | Granite 4 Small H | Execute quantum circuits | 1 IBM Quantum tool |
+| **Lab** | 8000 | Granite 4.2 8B | Main orchestrator, coordinates all agents | 3 A2A clients |
+| **Developer** | 8001 | Granite 4.2 8B | Code generation & explanations | None (pure LLM) |
+| **Status** | 8002 | Granite 4.2 8B | Query backends & job status | 3 IBM Quantum tools |
+| **Computing** | 8003 | Granite 4.2 8B | Execute quantum circuits | 1 IBM Quantum tool |
 
 ## 🔄 Communication Flow
 
@@ -122,7 +122,7 @@ graph LR
 - Python 3.11+
 - IBM Quantum account ([Get one here](https://quantum.cloud.ibm.com/))
 - IBM Watsonx account with API key
-- Ollama (optional, for local models such as `granite4:small-h`)
+- Ollama (optional, for local models such as `granite4.2:8b`)
 - `uv` package manager (recommended) or `pip`
 
 ## 🚀 Quick Start
@@ -160,16 +160,16 @@ WATSONX_API_URL=https://us-south.ml.cloud.ibm.com.....
 
 # Models use BeeAI provider:model identifiers
 OLLAMA_API_BASE=http://127.0.0.1:11434
-DEVELOPER_MODEL=ollama:granite4:small-h
-LAB_MODEL=ollama:granite4:small-h
-STATUS_MODEL=ollama:granite4:small-h
-COMPUTING_MODEL=ollama:granite4:small-h
+DEVELOPER_MODEL=ollama:granite4.2:8b
+LAB_MODEL=ollama:granite4.2:8b
+STATUS_MODEL=ollama:granite4.2:8b
+COMPUTING_MODEL=ollama:granite4.2:8b
 ```
 
 For local inference, start Ollama and download the model before launching the agents:
 
 ```bash
-ollama pull granite4:small-h
+ollama pull granite4.2:8b
 ```
 
 The legacy `WATSONX_DEVELOPER_MODEL`, `WATSONX_LAB_MODEL`, `WATSONX_STATUS_MODEL`, and
@@ -467,7 +467,7 @@ This project is licensed under the Apache 2.0 License.
 - Built with [BeeAI Framework](https://github.com/i-am-bee/beeai-framework)
 - Powered by [IBM Watsonx](https://www.ibm.com/products/watsonx-ai)
 - Quantum computing via [IBM Quantum](https://quantum.ibm.com/)
-- LLM: Granite 4 Small H via Ollama
+- LLM: Granite 4.2 8B via Ollama
 
 ---
 

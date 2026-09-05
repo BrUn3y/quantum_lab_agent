@@ -332,7 +332,7 @@ LAB_AGENT_SKILLS = [
             "Create a superposition circuit with 2 qubits and execute it",
             "What quantum computers are available?",
             "Show me the status of job d671cklbujdc73cvbp30",
-            "Give me detailed information about ibm_brisbane",
+            "Give me detailed information about ibm_fez",
             "Explain what quantum entanglement is",
             "Create a Bell state and execute it on the simulator",
             "Which is the least busy backend?",
@@ -359,6 +359,17 @@ _QASM_FENCE_PATTERN = re.compile(r"```(?:open)?qasm\s*(OPENQASM\s+[\s\S]*?)```",
 _QASM_PATTERN = re.compile(r"OPENQASM\s+(?:2\.0|3\.0)\s*;[\s\S]*", re.IGNORECASE)
 _JOB_ID_PATTERN = re.compile(r"\b[a-z0-9]{16,}\b", re.IGNORECASE)
 _JOB_QUERY_PATTERN = re.compile(r"\b(job|status|estado|result\w*|resultado\w*|consulta\w*)\b", re.IGNORECASE)
+_BACKEND_NAME_PATTERN = re.compile(r"\bibm_[a-z0-9_]+\b", re.IGNORECASE)
+_STATUS_QUERY_PATTERN = re.compile(
+    r"\b(backend\w*|quantum computers?|computadoras? cu[aá]nticas?|available|availability|"
+    r"disponible\w*|least busy|less busy|menos ocupad\w*|qubits?|properties|propiedades)\b",
+    re.IGNORECASE,
+)
+_EXPLANATION_PATTERN = re.compile(
+    r"\b(explain\w*|describe\w*|what (?:is|are)|how (?:does|do)|explica\w*|"
+    r"describe\w*|qu[eé] (?:es|son)|c[oó]mo funciona\w*)\b",
+    re.IGNORECASE,
+)
 
 
 def _is_create_and_execute_request(request: str) -> bool:
@@ -370,6 +381,16 @@ def _single_job_id_query(request: str) -> str | None:
     """Return the job ID when the request is an unambiguous single-job query."""
     job_ids = list(dict.fromkeys(_JOB_ID_PATTERN.findall(request)))
     return job_ids[0] if len(job_ids) == 1 and _JOB_QUERY_PATTERN.search(request) else None
+
+
+def _is_status_query(request: str) -> bool:
+    """Return whether the request belongs to the Status Agent."""
+    return bool(_BACKEND_NAME_PATTERN.search(request) or _STATUS_QUERY_PATTERN.search(request))
+
+
+def _is_explanation_query(request: str) -> bool:
+    """Return whether the request asks the Developer Agent for an explanation."""
+    return bool(_EXPLANATION_PATTERN.search(request))
 
 
 def _extract_qasm(response: str) -> str | None:
@@ -402,7 +423,7 @@ async def _create_and_execute(request: str) -> tuple[str, str]:
     )
     developer_output = await asyncio.wait_for(
         QuantumDeveloperClient().run({"request": developer_request, "format": "qasm"}),
-        timeout=180,
+        timeout=420,
     )
     developer_response = developer_output.get_text_content()
     qasm_code = _extract_qasm(developer_response)
@@ -640,6 +661,50 @@ async def quantum_lab_agent(
                 content=f"**Type:** {type(e).__name__}\n**Message:** {explain_error(e)}",
             )
             yield AgentMessage(text=f"❌ Could not query job `{job_id}`: {explain_error(e)}")
+        return
+
+    # Common backend queries have a single correct destination. Route them
+    # directly so local models cannot emit an unexecuted tool-call payload.
+    if _is_status_query(user_query):
+        yield trajectory.trajectory_metadata(
+            title="📊 Querying IBM Quantum",
+            content="Routing the request directly to the Status Agent...",
+        )
+        try:
+            status_output = await asyncio.wait_for(
+                QuantumStatusClient().run({"query": user_query}),
+                timeout=180,
+            )
+            response_message = AgentMessage(text=status_output.get_text_content())
+            yield response_message
+            try:
+                await context.store(response_message)
+            except Exception as e:
+                print(f"⚠️ [History] Could not store status response: {str(e)}")
+        except Exception as e:
+            yield AgentMessage(text=f"❌ Could not complete status query: {explain_error(e)}")
+        return
+
+    # Concept explanations belong to the Developer Agent. The explicit
+    # explanation format prevents its A2A client from appending a QASM request.
+    if _is_explanation_query(user_query):
+        yield trajectory.trajectory_metadata(
+            title="💡 Explaining quantum concept",
+            content="Routing the request directly to the Developer Agent...",
+        )
+        try:
+            developer_output = await asyncio.wait_for(
+                QuantumDeveloperClient().run({"request": user_query, "format": "explanation"}),
+                timeout=420,
+            )
+            response_message = AgentMessage(text=developer_output.get_text_content())
+            yield response_message
+            try:
+                await context.store(response_message)
+            except Exception as e:
+                print(f"⚠️ [History] Could not store explanation response: {str(e)}")
+        except Exception as e:
+            yield AgentMessage(text=f"❌ Could not explain the quantum concept: {explain_error(e)}")
         return
     
     # Create agent with instructions and tools
