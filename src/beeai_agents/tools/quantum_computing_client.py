@@ -16,6 +16,8 @@ from pydantic import BaseModel, Field
 from typing import Optional
 import os
 
+from .a2a_response import extract_final_text
+
 class ComputingClientInput(BaseModel):
     """Input schema for Quantum Computing Client"""
     request: str = Field(
@@ -174,7 +176,7 @@ The Job ID is critical because the user needs it to consult results later."""
             response = await a2a_agent.run(enhanced_request)
             
             # Extract the response text
-            computing_response = response.last_message.text if hasattr(response, 'last_message') else str(response)
+            computing_response = extract_final_text(response)
             
             if not computing_response:
                 return StringToolOutput(

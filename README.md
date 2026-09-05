@@ -161,7 +161,7 @@ Select one agent or print a snapshot without following new output:
 ### 4. Verify every agent
 
 ```bash
-for port in 8000 8001 8002 8003; do
+for port in 8000 8001 8002 8003 8004; do
   curl -fsS "http://127.0.0.1:${port}/.well-known/agent-card.json" \
     | jq -r '.name'
 done
@@ -210,23 +210,23 @@ Backend availability depends on the IBM Quantum account. The agent queries the l
 
 ## 🧪 End-to-end tests
 
-Run the live suite to verify the four services and execute Bell, CX, Grover, and Deutsch–Jozsa circuits through the complete Lab → Developer → Computing flow:
+Run the live suite to verify all five services, execute Bell, CX, Grover, and Deutsch–Jozsa circuits through the Lab → Developer → Computing flow, and validate a QAOA Max-Cut experiment through the Experiment Agent:
 
 ```bash
 ./test_e2e.sh
 ```
 
-The suite uses the agents already running on ports `8000`–`8003`. If none are running, it starts all four with `granite4.2:8b`, waits for their agent cards, runs every circuit on the local statevector simulator, and stops only the processes it started. Logs from an automatic startup are written to `.logs/e2e/`.
+The suite uses the agents already running on ports `8000`–`8004`. If none are running, it starts all five with `granite4.2:8b`, waits for their agent cards, runs every circuit and experiment on local simulators, and stops only the processes it started. Logs from an automatic startup are written to `.logs/e2e/`.
 
 Useful options:
 
 ```bash
-./test_e2e.sh --no-start        # Require an existing four-agent system
+./test_e2e.sh --no-start        # Require an existing five-agent system
 ./test_e2e.sh --shots 256       # Change the number of simulator shots
 ./test_e2e.sh --timeout 300     # Allow slower local environments
 ```
 
-Custom `--lab-port`, `--developer-port`, `--status-port`, and `--computing-port` options are available for isolated or parallel test environments.
+Custom `--lab-port`, `--developer-port`, `--status-port`, `--computing-port`, and `--experiment-port` options are available for isolated or parallel test environments.
 
 ## ⚙️ Configuration
 
@@ -256,20 +256,20 @@ Custom `--lab-port`, `--developer-port`, `--status-port`, and `--computing-port`
 
 ## 🐳 Docker
 
-The included image runs the Lab Agent. Start the three specialized agents on the host, then build and run the orchestrator:
+The included image runs the Lab Agent. Start the four specialized agents on the host, then build and run the orchestrator:
 
 ```bash
 docker build -t quantum-lab-agent .
 docker run --env-file .env -p 8000:8000 quantum-lab-agent
 ```
 
-The Developer, Status, and Computing agents must remain reachable through the host and port values configured in `.env`. For an all-local setup, `./start_all.sh` is the recommended option.
+The Developer, Status, Computing, and Experiment agents must remain reachable through the host and port values configured in `.env`. For an all-local setup, `./start_all.sh` is the recommended option.
 
 ## 🧰 Troubleshooting
 
 | Problem | Check |
 |---|---|
-| A workflow is incomplete | Confirm that all four agent cards respond |
+| A workflow is incomplete | Confirm that all five agent cards respond |
 | Ollama cannot be reached | Run `ollama list` and confirm `granite4.2:8b` is installed |
 | IBM Quantum authentication fails | Verify `QISKIT_IBM_TOKEN` in `.env` |
 | A port is already occupied | Run `lsof -nP -iTCP:<port> -sTCP:LISTEN` |
@@ -280,11 +280,14 @@ The Developer, Status, and Computing agents must remain reachable through the ho
 ```text
 quantum_lab_agent/
 ├── docs/images/architecture.png
+├── docs/images/quantum-lab-demo.gif
+├── docs/images/quantum-experiment-real-hardware.gif
 ├── src/beeai_agents/
 │   ├── quantum_lab_agent.py
 │   ├── quantum_developer_agent.py
 │   ├── quantum_status_agent.py
 │   ├── quantum_computing_agent.py
+│   ├── quantum_experiment_agent.py
 │   └── tools/
 ├── .env.example
 ├── Dockerfile
@@ -293,6 +296,7 @@ quantum_lab_agent/
 ├── start_developer.sh
 ├── start_status.sh
 ├── start_computing.sh
+├── start_experiment.sh
 ├── view_logs.sh
 └── pyproject.toml
 ```
@@ -309,7 +313,7 @@ quantum_lab_agent/
 
 ## Contributing
 
-Issues and pull requests are welcome. When changing a workflow, validate the four agent endpoints and include an end-to-end prompt test.
+Issues and pull requests are welcome. When changing a workflow, validate all five agent endpoints and include an end-to-end prompt test.
 
 ---
 

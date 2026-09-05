@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run live end-to-end tests against the four-agent Quantum Lab system."""
+"""Run live end-to-end tests against the five-agent Quantum Lab system."""
 
 from __future__ import annotations
 
@@ -23,6 +23,13 @@ AGENT_CONFIGS = (
     ("developer", "Quantum Developer Agent", "beeai_agents.quantum_developer_agent", "DEVELOPER_PORT", 8001),
     ("status", "Quantum Status Agent", "beeai_agents.quantum_status_agent", "STATUS_PORT", 8002),
     ("computing", "Quantum Computing Agent", "beeai_agents.quantum_computing_agent", "COMPUTING_PORT", 8003),
+    (
+        "experiment",
+        "Quantum Experiment Agent (Development)",
+        "beeai_agents.quantum_experiment_agent",
+        "EXPERIMENT_PORT",
+        8004,
+    ),
     ("lab", "Quantum Lab Agent", "beeai_agents.quantum_lab_agent", "LAB_PORT", 8000),
 )
 COUNT_ROW = re.compile(r"\|\s*`([01]+)`\s*\|\s*(\d+)\s*\|")
@@ -106,8 +113,9 @@ def start_agents(
     environment.setdefault("DEVELOPER_MODEL", "ollama:granite4.2:8b")
     environment.setdefault("STATUS_MODEL", "ollama:granite4.2:8b")
     environment.setdefault("COMPUTING_MODEL", "ollama:granite4.2:8b")
+    environment.setdefault("EXPERIMENT_MODEL", "ollama:granite4.2:8b")
     environment.setdefault("LAB_MODEL", "ollama:granite4.2:8b")
-    for prefix in ("DEVELOPER", "STATUS", "COMPUTING", "LAB"):
+    for prefix in ("DEVELOPER", "STATUS", "COMPUTING", "EXPERIMENT", "LAB"):
         environment[f"{prefix}_HOST"] = host
     for _, _, _, port_variable, port in agents:
         environment[port_variable] = str(port)
@@ -208,6 +216,47 @@ def execute_case(base_url: str, case: CircuitCase, shots: int, timeout: float) -
         raise AssertionError(f"Expected {shots} measurements, got {sum(counts.values())}")
 
 
+def execute_experiment_case(base_url: str, timeout: float) -> None:
+    request_id = str(uuid.uuid4())
+    payload = {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "method": "message/send",
+        "params": {
+            "message": {
+                "kind": "message",
+                "messageId": str(uuid.uuid4()),
+                "role": "user",
+                "parts": [
+                    {
+                        "kind": "text",
+                        "text": (
+                            "Use QAOA to solve Max-Cut on a 5-node graph using the local simulator, "
+                            "validate against the exact optimum, and show the experiment in Canvas."
+                        ),
+                    }
+                ],
+            }
+        },
+    }
+    response = request_json(f"{base_url}/jsonrpc/", payload=payload, timeout=timeout)
+    if response.get("id") != request_id:
+        raise AssertionError("JSON-RPC response ID does not match the experiment request")
+
+    text = final_agent_text(response)
+    required_fragments = (
+        "QAOA Max-Cut experiment",
+        "**Exact optimum:** 4",
+        "**Approximation ratio:** 93.75%",
+        "OPENQASM 2.0;",
+        "agentstack://",
+        "Simulator baseline completed",
+    )
+    missing = [fragment for fragment in required_fragments if fragment not in text]
+    if missing:
+        raise AssertionError(f"Missing expected experiment output: {', '.join(missing)}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default=os.getenv("LAB_HOST", "127.0.0.1"))
@@ -215,6 +264,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--developer-port", type=int, default=int(os.getenv("DEVELOPER_PORT", "8001")))
     parser.add_argument("--status-port", type=int, default=int(os.getenv("STATUS_PORT", "8002")))
     parser.add_argument("--computing-port", type=int, default=int(os.getenv("COMPUTING_PORT", "8003")))
+    parser.add_argument("--experiment-port", type=int, default=int(os.getenv("EXPERIMENT_PORT", "8004")))
     parser.add_argument("--shots", type=int, default=128)
     parser.add_argument("--timeout", type=float, default=180)
     parser.add_argument("--startup-timeout", type=float, default=90)
@@ -235,6 +285,7 @@ def main() -> int:
         "developer": args.developer_port,
         "status": args.status_port,
         "computing": args.computing_port,
+        "experiment": args.experiment_port,
         "lab": args.lab_port,
     }
     agents = tuple(
@@ -247,13 +298,13 @@ def main() -> int:
     if ready_count == 0:
         if args.no_start:
             raise SystemExit("No agents are running and --no-start was supplied")
-        print("Starting all four agents with Granite 4.2 8B...")
+        print("Starting all five agents with Granite 4.2 8B...")
         processes = start_agents(args.host, agents, args.startup_timeout)
     elif ready_count != len(agents):
         unavailable = ", ".join(name for name, ready in states.items() if not ready)
         raise SystemExit(f"Only part of the system is running; unavailable: {unavailable}")
     else:
-        print("Reusing the four running agents.")
+        print("Reusing the five running agents.")
 
     base_url = f"http://{args.host}:{args.lab_port}"
     failures = 0
@@ -266,13 +317,20 @@ def main() -> int:
             except Exception as error:
                 failures += 1
                 print(f"FAIL  {case.name:<16} {error}", file=sys.stderr)
+        started = time.monotonic()
+        try:
+            execute_experiment_case(base_url, args.timeout)
+            print(f"PASS  {'QAOA experiment':<16} {time.monotonic() - started:5.2f}s")
+        except Exception as error:
+            failures += 1
+            print(f"FAIL  {'QAOA experiment':<16} {error}", file=sys.stderr)
     finally:
         stop_agents(processes)
 
     if failures:
         print(f"\n{failures} end-to-end test(s) failed.", file=sys.stderr)
         return 1
-    print(f"\nAll {len(CASES)} end-to-end tests passed through Lab → Developer → Computing.")
+    print(f"\nAll {len(CASES) + 1} end-to-end tests passed across the five-agent system.")
     print("Status Agent availability was also verified through its live agent card.")
     return 0
 

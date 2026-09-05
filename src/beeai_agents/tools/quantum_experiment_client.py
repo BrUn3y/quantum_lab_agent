@@ -3,7 +3,6 @@
 import os
 from typing import Optional
 
-from a2a.utils.message import get_message_text
 from beeai_framework.adapters.a2a.agents import A2AAgent
 from beeai_framework.context import RunContext
 from beeai_framework.emitter import Emitter
@@ -12,34 +11,14 @@ from beeai_framework.tools import Tool
 from beeai_framework.tools.types import StringToolOutput, ToolRunOptions
 from pydantic import BaseModel, Field
 
+from .a2a_response import extract_final_text
+
 
 class ExperimentClientInput(BaseModel):
     request: str = Field(description="Hybrid quantum experiment or research request.")
 
 
-def extract_experiment_response(response: object) -> str:
-    """Return the final agent message, not the preceding Canvas artifact.
-
-    BeeAI's A2A adapter currently exposes an artifact as ``last_message`` when
-    an agent emits both Canvas content and a final text message. The complete
-    A2A task still contains the final message in its history.
-    """
-    events = getattr(response, "event", ())
-    if not isinstance(events, (tuple, list)):
-        events = (events,)
-    for event in reversed(events):
-        history = getattr(event, "history", None) or ()
-        for message in reversed(history):
-            try:
-                text = get_message_text(message).strip()
-            except Exception:
-                continue
-            if text:
-                return text
-
-    last_message = getattr(response, "last_message", None)
-    text = getattr(last_message, "text", "")
-    return text.strip() if isinstance(text, str) else str(response)
+extract_experiment_response = extract_final_text
 
 
 class QuantumExperimentClient(Tool[ExperimentClientInput]):
