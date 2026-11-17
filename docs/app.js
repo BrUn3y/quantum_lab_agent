@@ -4,45 +4,45 @@ const agentInfo = {
   lab: {
     kind: "THE ORCHESTRATOR",
     port: "8000",
-    title: "Una conversación. Todo conectado.",
+    title: "One conversation. Everything connected.",
     description:
-      "Entiende tu solicitud y coordina a los agentes especializados mediante A2A. Código, backend y resultados vuelven a ti en una sola respuesta.",
+      "Understands your request and coordinates specialized agents through A2A. Code, backend details, and results come back to you in a single response.",
     repo: "quantum_lab_agent",
     symbol: "Q",
   },
   developer: {
     kind: "THE CIRCUIT BUILDER",
     port: "8001",
-    title: "Tus ideas, en lenguaje cuántico.",
+    title: "Your ideas, in quantum language.",
     description:
-      "Transforma instrucciones en código Qiskit y OpenQASM. Genera circuitos y algoritmos como Bell, Grover y Deutsch–Jozsa, listos para el siguiente paso.",
+      "Turns instructions into Qiskit and OpenQASM code. Generates circuits and algorithms such as Bell, Grover, and Deutsch–Jozsa, ready for the next step.",
     repo: "quantum-developer-agent",
     symbol: "H",
   },
   status: {
     kind: "THE HARDWARE OBSERVER",
     port: "8002",
-    title: "Conoce el estado de cada posibilidad.",
+    title: "See the status of every possibility.",
     description:
-      "Consulta disponibilidad, colas y topologías de los backends IBM Quantum. Recupera el estado de tus jobs y sus resultados con información del servicio en vivo.",
+      "Checks IBM Quantum backend availability, queues, and topologies. Retrieves your job status and results with live information from the service.",
     repo: "quantum-status-agent",
     symbol: "S",
   },
   computing: {
     kind: "THE QUANTUM EXECUTOR",
     port: "8003",
-    title: "Del circuito al resultado real.",
+    title: "From circuit to real results.",
     description:
-      "Ejecuta circuitos en simuladores locales o en las QPU IBM Quantum accesibles para tu cuenta. Obtén el backend, el Job ID y las mediciones de cada ejecución.",
+      "Runs circuits on local simulators or IBM Quantum QPUs available to your account. Get the backend, job ID, and measurements for each run.",
     repo: "quantum-computing-agent",
     symbol: "X",
   },
   experiment: {
     kind: "THE EXPLORER / IN DEVELOPMENT",
     port: "8004",
-    title: "Explora la frontera híbrida.",
+    title: "Explore the hybrid frontier.",
     description:
-      "Experimenta con QAOA Max-Cut y flujos de optimización híbrida. Combina validación clásica, análisis en Canvas y evaluación opcional en una QPU. Agente en desarrollo.",
+      "Experiments with QAOA Max-Cut and hybrid optimization workflows. Combines classical validation, Canvas analysis, and optional QPU evaluation. Agent in development.",
     repo: "quantum-experiment-agent",
     symbol: "E",
   },
@@ -52,16 +52,16 @@ const demos = {
   grover: {
     image: "images/quantum-lab-demo.gif",
     title: "quantum_lab / grover_workflow",
-    alt: "Demo de generación y ejecución de un circuito de Grover, con resultados y visualización en Agent Stack.",
+    alt: "Demo of Grover circuit generation and execution, with results and visualization in Agent Stack.",
     caption:
-      "De un prompt a un circuito de Grover: generación, ejecución coordinada y visualización de resultados.",
+      "From a prompt to a Grover circuit: generation, coordinated execution, and results visualization.",
   },
   qaoa: {
     image: "images/quantum-experiment-real-hardware.gif",
     title: "quantum_lab / qaoa_real_hardware",
-    alt: "Demo de QAOA Max-Cut: optimización local, validación clásica y ejecución real en ibm_marrakesh con 1024 shots.",
+    alt: "QAOA Max-Cut demo: local optimization, classical validation, and real hardware execution on ibm_marrakesh with 1,024 shots.",
     caption:
-      "QAOA Max-Cut en un grafo de 5 nodos: optimización local, validación clásica y ejecución en ibm_marrakesh con 1,024 shots. Función en desarrollo.",
+      "QAOA Max-Cut on a 5-node graph: local optimization, classical validation, and execution on ibm_marrakesh with 1,024 shots. Feature in development.",
   },
 };
 
@@ -147,7 +147,7 @@ cd quantum_lab_agent
 uv sync
 ollama pull granite4.2:8b
 cp .env.example .env
-# Edita QISKIT_IBM_TOKEN en .env antes de iniciar los agentes.
+# Set QISKIT_IBM_TOKEN in .env before starting the agents.
 ./start_all.sh`;
 
 let toastTimer;
@@ -188,11 +188,11 @@ document.querySelectorAll("[data-copy]").forEach((button) => {
       await copyText(text);
       showToast(
         button.dataset.copy === "install"
-          ? "Comandos copiados. Tu laboratorio te espera."
-          : "Prompt copiado. Pruébalo en tu Lab Agent.",
+          ? "Commands copied. Your lab awaits."
+          : "Prompt copied. Try it in your Lab Agent.",
       );
     } catch {
-      showToast("Selecciona el texto para copiarlo manualmente.");
+      showToast("Select the text to copy it manually.");
     }
   });
 });
