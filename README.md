@@ -14,6 +14,8 @@ hardware, and retrieve job results through one coordinated interface.
 
 [Quick start](#-quick-start) · [Architecture](#-architecture) · [Try it](#-try-it) · [Repositories](#-public-agent-repositories)
 
+[Explore the project website ↗](https://brun3y.github.io/quantum_lab_agent/)
+
 </div>
 
 ---
